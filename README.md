@@ -14,7 +14,7 @@ Sending Right Arrow with Core Graphics also requires macOS keyboard event (`Post
 
 ## Pair an iPhone
 
-Open Keynote, run `UniversalControllerMac`, open the menu-bar overlay, and click **Pair iPhone**. The Mac advertises a temporary Bonjour service and displays a QR code that expires after five minutes. Pairing from Keynote sends a hardcoded **Next Slide** button to the iPhone.
+Open Keynote, run `UniversalControllerMac`, open the menu-bar overlay, and click **Pair iPhone**. The Mac advertises a temporary Bonjour service and displays a QR code that expires after five minutes. Pairing from Keynote sends a validated `ControllerDocument` containing a **Next Slide** button, responsive layout, and Right Arrow binding.
 
 On a physical iPhone:
 
@@ -28,6 +28,6 @@ The phone authenticates with the one-time secret in the QR and automatically sen
 
 Disconnecting on either device clears the paired state on the other. If a device quits or the connection closes unexpectedly, the other device reports the lost connection so you can pair again.
 
-To test the complete path, start a Keynote slideshow and tap **Next Slide** on the paired iPhone. The Mac activates the Keynote app captured when pairing began and sends Right Arrow. If permissions are missing or Keynote has quit, the Mac overlay shows the error.
+To test the complete path, start a Keynote slideshow and tap **Next Slide** on the paired iPhone. The phone emits a generic control event; the Mac validates its controller ID, revision, event type, value type, and sequence, resolves the binding through `ControllerActionRouter`, activates the captured Keynote app, and executes the pre-coded Right Arrow action. If permissions are missing or Keynote has quit, the Mac overlay shows the error.
 
 QR scanning requires a physical iPhone. The simulator can build and display the pairing screen, but VisionKit does not provide camera scanning there. Both devices should be on the same Wi-Fi network; the Network framework configuration also opts into Apple peer-to-peer networking.

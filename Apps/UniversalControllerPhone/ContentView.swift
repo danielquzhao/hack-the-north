@@ -146,21 +146,10 @@ struct ContentView: View {
         case .connected:
             VStack(spacing: 20) {
                 if let controller = pairingClient.controller {
-                    Text(controller.name)
-                        .font(.headline)
-                    ForEach(controller.controls) { control in
-                        if case .button = control.kind {
-                            Button {
-                                pairingClient.trigger(control)
-                            } label: {
-                                Text(control.label)
-                                    .font(.title2.bold())
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 24)
-                            }
-                            .buttonStyle(.borderedProminent)
-                        }
-                    }
+                    ControllerRendererView(
+                        document: controller,
+                        onTrigger: pairingClient.trigger
+                    )
                 } else {
                     Text("No demo controller. Open Keynote on the Mac and start a new pairing session.")
                         .font(.subheadline)

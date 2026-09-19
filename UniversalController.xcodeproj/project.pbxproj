@@ -26,6 +26,8 @@
 		A10000000000000000000011 /* SchemaValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001A /* SchemaValidator.swift */; };
 		A10000000000000000000012 /* ControllerSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000019 /* ControllerSchema.swift */; };
 		A10000000000000000000013 /* SchemaValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001A /* SchemaValidator.swift */; };
+		A10000000000000000000014 /* ControllerActionRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001B /* ControllerActionRouter.swift */; };
+		A10000000000000000000015 /* ControllerRendererView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001C /* ControllerRendererView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,6 +51,8 @@
 		B10000000000000000000018 /* SharedSigning.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = SharedSigning.xcconfig; sourceTree = "<group>"; };
 		B10000000000000000000019 /* ControllerSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerSchema.swift; sourceTree = "<group>"; };
 		B1000000000000000000001A /* SchemaValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemaValidator.swift; sourceTree = "<group>"; };
+		B1000000000000000000001B /* ControllerActionRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerActionRouter.swift; sourceTree = "<group>"; };
+		B1000000000000000000001C /* ControllerRendererView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerRendererView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -98,6 +102,7 @@
 				B10000000000000000000009 /* MacActionExecutor.swift */,
 				B10000000000000000000012 /* PairingSessionHost.swift */,
 				B10000000000000000000013 /* PairingQRCodeView.swift */,
+				B1000000000000000000001B /* ControllerActionRouter.swift */,
 				B10000000000000000000016 /* Info.plist */,
 			);
 			path = UniversalControllerMac;
@@ -110,6 +115,7 @@
 				B10000000000000000000002 /* UniversalControllerPhoneApp.swift */,
 				B10000000000000000000014 /* PairingClient.swift */,
 				B10000000000000000000015 /* QRCodeScannerView.swift */,
+				B1000000000000000000001C /* ControllerRendererView.swift */,
 				B10000000000000000000017 /* Info.plist */,
 			);
 			path = UniversalControllerPhone;
@@ -242,6 +248,7 @@
 				A1000000000000000000000D /* PairingQRCodeView.swift in Sources */,
 				A10000000000000000000010 /* ControllerSchema.swift in Sources */,
 				A10000000000000000000011 /* SchemaValidator.swift in Sources */,
+				A10000000000000000000014 /* ControllerActionRouter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -257,6 +264,7 @@
 				A1000000000000000000000F /* QRCodeScannerView.swift in Sources */,
 				A10000000000000000000012 /* ControllerSchema.swift in Sources */,
 				A10000000000000000000013 /* SchemaValidator.swift in Sources */,
+				A10000000000000000000015 /* ControllerRendererView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

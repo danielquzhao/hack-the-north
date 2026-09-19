@@ -129,12 +129,29 @@ final class OverlayPanelController {
         }
 
         pairingHost.startSession(controller: controller)
-        if controller != nil {
-            pairingHost.onControlEvent = { [weak self] _ in
+        if let controller, let application = context?.application,
+           let router = try? ControllerActionRouter(
+               document: controller,
+               application: application
+           ) {
+            pairingHost.onControlEvent = { [weak self] event in
                 Task { @MainActor [weak self] in
-                    await self?.sendNextSlide(context: context)
+                    await self?.route(event, using: router, context: context)
                 }
             }
+        }
+    }
+
+    private func route(
+        _ event: ControlEvent,
+        using router: ControllerActionRouter,
+        context: AppContext?
+    ) async {
+        close()
+        do {
+            try await router.handle(event)
+        } catch {
+            open(context: context, errorMessage: error.localizedDescription)
         }
     }
 
