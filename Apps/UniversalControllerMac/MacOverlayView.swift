@@ -1,18 +1,27 @@
 import AppKit
 import SwiftUI
 
+enum DemoControllerStyle: String, CaseIterable, Identifiable {
+    case presenter = "Presenter"
+    case gamepad = "Gamepad"
+
+    var id: Self { self }
+}
+
 struct MacOverlayView: View {
     let context: AppContext?
     let errorMessage: String?
     @ObservedObject var pairingHost: PairingSessionHost
     let onClose: () -> Void
     let onRequestPermission: () -> Void
-    let onStartPairing: () -> Void
+    let onStartPairing: (DemoControllerStyle, Bool) -> Void
     let onNextSlide: () -> Void
 
     @State private var prompt = ""
     @State private var permissionStatus = MacActionExecutor.permissionStatus
     @State private var showKeyboardHelp = false
+    @State private var demoStyle: DemoControllerStyle = .presenter
+    @State private var includeTilt = false
     @FocusState private var promptIsFocused: Bool
 
     var body: some View {
@@ -117,6 +126,19 @@ struct MacOverlayView: View {
                     Spacer()
                 }
 
+                if let context, MacActionExecutor.isKeynote(context.application) {
+                    HStack(spacing: 16) {
+                        Picker("Demo layout", selection: $demoStyle) {
+                            ForEach(DemoControllerStyle.allCases) { style in
+                                Text(style.rawValue).tag(style)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        Toggle("Phone tilt moves pointer", isOn: $includeTilt)
+                            .disabled(demoStyle != .gamepad)
+                    }
+                }
+
                 pairingSection
 
                 if let errorMessage {
@@ -163,7 +185,7 @@ struct MacOverlayView: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button("Pair iPhone") {
-                        onStartPairing()
+                        onStartPairing(demoStyle, includeTilt)
                     }
                     .buttonStyle(.borderedProminent)
                 }
@@ -218,8 +240,8 @@ struct MacOverlayView: View {
                             : "Bidirectional connection verified")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        if pairingHost.controller != nil {
-                            Text("Next Slide is ready on your iPhone")
+                        if let controller = pairingHost.controller {
+                            Text("\(controller.name) is ready on your iPhone")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         } else {
@@ -241,7 +263,7 @@ struct MacOverlayView: View {
                     Text(message)
                         .font(.subheadline)
                     Spacer()
-                    Button("New QR") { onStartPairing() }
+                    Button("New QR") { onStartPairing(demoStyle, includeTilt) }
                 }
                 .padding(14)
                 .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))

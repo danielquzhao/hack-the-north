@@ -15,6 +15,8 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
     let schemaVersion: Int
     let controls: [ControlCapabilityDescriptor]
     let actions: [ActionCapabilityDescriptor]
+    let buttonFaces: [ButtonFace]
+    let motionSources: [MotionSource]
 
     static let current = ControllerCapabilityCatalog(
         schemaVersion: ControllerDocument.currentSchemaVersion,
@@ -24,13 +26,29 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
                 outputKind: .none,
                 events: [.triggered]
             ),
+            ControlCapabilityDescriptor(
+                id: .joystick,
+                outputKind: .vector2,
+                events: [.changed]
+            ),
+            ControlCapabilityDescriptor(
+                id: .motion,
+                outputKind: .vector2,
+                events: [.changed]
+            ),
         ],
         actions: [
             ActionCapabilityDescriptor(
                 id: .keyChord,
                 acceptedInputKinds: [.none]
             ),
-        ]
+            ActionCapabilityDescriptor(
+                id: .mouseMove,
+                acceptedInputKinds: [.vector2]
+            ),
+        ],
+        buttonFaces: ButtonFace.allCases,
+        motionSources: MotionSource.allCases
     )
 }
 
@@ -87,6 +105,12 @@ enum SchemaValidator {
                 throw error("Control '\(control.id)' has an invalid label.")
             }
         }
+        guard document.controls.filter({
+            if case .motion = $0.kind { return true }
+            return false
+        }).count <= 1 else {
+            throw error("Only one motion control is supported per controller.")
+        }
 
         let layoutIDs = document.layout.items.map(\.controlID)
         guard Set(layoutIDs).count == layoutIDs.count else {
@@ -108,6 +132,9 @@ enum SchemaValidator {
         let bindingIDs = document.bindings.map(\.id)
         guard Set(bindingIDs).count == bindingIDs.count else {
             throw error("Binding IDs must be unique.")
+        }
+        guard Set(document.bindings.map(\.controlID)) == Set(controlIDs) else {
+            throw error("Every control must have an action binding.")
         }
 
         var boundEvents = Set<String>()
@@ -137,6 +164,11 @@ enum SchemaValidator {
                Set(action.modifiers).count != action.modifiers.count {
                 throw error("Keyboard shortcut modifiers cannot contain duplicates.")
             }
+            if case .mouseMove(let action) = binding.action,
+               (!action.gain.isFinite || !(1...40).contains(action.gain) ||
+                !action.deadZone.isFinite || !(0...0.5).contains(action.deadZone)) {
+                throw error("Mouse movement gain or dead zone is out of range.")
+            }
         }
     }
 
@@ -158,6 +190,11 @@ enum SchemaValidator {
         }
         guard event.value.kind == control.kind.outputKind else {
             throw error("Control event contains the wrong value type.")
+        }
+        if case .vector2(let value) = event.value,
+           (!value.x.isFinite || !value.y.isFinite ||
+            abs(value.x) > 1 || abs(value.y) > 1) {
+            throw error("Control event vector must be between -1 and 1.")
         }
         guard let binding = document.binding(controlID: event.controlID, event: event.event) else {
             throw error("Control event has no action binding.")

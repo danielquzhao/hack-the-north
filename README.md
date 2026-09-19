@@ -14,7 +14,9 @@ Sending Right Arrow with Core Graphics also requires macOS keyboard event (`Post
 
 ## Pair an iPhone
 
-Open Keynote, run `UniversalControllerMac`, open the menu-bar overlay, and click **Pair iPhone**. The Mac advertises a temporary Bonjour service and displays a QR code that expires after five minutes. Pairing from Keynote sends a validated `ControllerDocument` containing a **Next Slide** button, responsive layout, and Right Arrow binding.
+Open Keynote, run `UniversalControllerMac`, open the menu-bar overlay, and click **Pair iPhone**. The Mac advertises a temporary Bonjour service and displays a QR code that expires after five minutes. Pairing from Keynote sends a validated `ControllerDocument` containing a responsive layout and deterministic action bindings.
+
+Choose **Presenter** for the original Next Slide button. Choose **Gamepad** to preview a thumbstick and A/B/X/Y button faces. The sample maps A to next slide, B to previous slide, X to black screen, Y to advance, and the thumbstick to pointer movement. **Phone tilt moves pointer** adds an optional motion control. The phone reads motion only while that control is visible; tap its card to recenter. This is a built-in demo layout; the prompt field does not generate layouts yet.
 
 On a physical iPhone:
 
@@ -22,9 +24,9 @@ On a physical iPhone:
 2. Tap **Scan Mac QR**.
 3. Allow Camera and Local Network access.
 4. Scan the QR displayed by the Mac.
-5. Keep both apps open until both devices show **Connected**.
+5. Keep both apps open until the phone shows the controller and the Mac shows **Connected**.
 
-The phone authenticates with the one-time secret in the QR and automatically sends a ping. A round-trip time on the phone and **Bidirectional connection verified** on the Mac confirm that messages work in both directions.
+The phone authenticates with the one-time secret in the QR and automatically sends a ping. **Bidirectional connection verified** on the Mac confirms that messages work in both directions. Once paired, the phone uses the available screen for controls, with a compact title and disconnect button at the top.
 
 Disconnecting on either device clears the paired state on the other. If a device quits or the connection closes unexpectedly, the other device reports the lost connection so you can pair again.
 

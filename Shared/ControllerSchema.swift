@@ -45,22 +45,71 @@ enum ButtonVariant: String, Codable, Equatable, Sendable {
     case destructive
 }
 
-enum ControlCapabilityID: String, Codable, CaseIterable, Equatable, Sendable {
-    case button
+enum ButtonFace: String, Codable, CaseIterable, Equatable, Sendable {
+    case standard
+    case a
+    case b
+    case x
+    case y
 }
 
-struct ButtonControlConfiguration: Codable, Equatable, Sendable {
+enum ControlCapabilityID: String, Codable, CaseIterable, Equatable, Sendable {
+    case button
+    case joystick
+    case motion
+}
+
+struct ButtonControlConfiguration: Equatable, Sendable {
     let variant: ButtonVariant
     let hapticsEnabled: Bool
+    let face: ButtonFace
+}
+
+extension ButtonControlConfiguration: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case variant
+        case hapticsEnabled
+        case face
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        variant = try container.decode(ButtonVariant.self, forKey: .variant)
+        hapticsEnabled = try container.decode(Bool.self, forKey: .hapticsEnabled)
+        face = try container.decodeIfPresent(ButtonFace.self, forKey: .face) ?? .standard
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(variant, forKey: .variant)
+        try container.encode(hapticsEnabled, forKey: .hapticsEnabled)
+        try container.encode(face, forKey: .face)
+    }
+}
+
+struct JoystickControlConfiguration: Codable, Equatable, Sendable {
+    let hapticsEnabled: Bool
+}
+
+enum MotionSource: String, Codable, CaseIterable, Equatable, Sendable {
+    case tilt
+}
+
+struct MotionControlConfiguration: Codable, Equatable, Sendable {
+    let source: MotionSource
 }
 
 enum ControlKind: Equatable, Sendable {
     case button(ButtonControlConfiguration)
+    case joystick(JoystickControlConfiguration)
+    case motion(MotionControlConfiguration)
 
     var outputKind: InputValueKind {
         switch self {
         case .button:
             .none
+        case .joystick, .motion:
+            .vector2
         }
     }
 
@@ -68,6 +117,10 @@ enum ControlKind: Equatable, Sendable {
         switch self {
         case .button:
             .button
+        case .joystick:
+            .joystick
+        case .motion:
+            .motion
         }
     }
 
@@ -75,6 +128,8 @@ enum ControlKind: Equatable, Sendable {
         switch self {
         case .button:
             [.triggered]
+        case .joystick, .motion:
+            [.changed]
         }
     }
 }
@@ -88,15 +143,33 @@ struct ControlDefinition: Equatable, Sendable, Identifiable {
         id: String,
         label: String,
         variant: ButtonVariant = .primary,
-        hapticsEnabled: Bool = true
+        hapticsEnabled: Bool = true,
+        face: ButtonFace = .standard
     ) -> ControlDefinition {
         ControlDefinition(
             id: id,
             label: label,
             kind: .button(ButtonControlConfiguration(
                 variant: variant,
-                hapticsEnabled: hapticsEnabled
+                hapticsEnabled: hapticsEnabled,
+                face: face
             ))
+        )
+    }
+
+    static func joystick(id: String, label: String) -> ControlDefinition {
+        ControlDefinition(
+            id: id,
+            label: label,
+            kind: .joystick(JoystickControlConfiguration(hapticsEnabled: true))
+        )
+    }
+
+    static func tilt(id: String, label: String) -> ControlDefinition {
+        ControlDefinition(
+            id: id,
+            label: label,
+            kind: .motion(MotionControlConfiguration(source: .tilt))
         )
     }
 }
@@ -120,6 +193,16 @@ extension ControlDefinition: Codable {
                 ButtonControlConfiguration.self,
                 forKey: .configuration
             ))
+        case .joystick:
+            kind = .joystick(try container.decode(
+                JoystickControlConfiguration.self,
+                forKey: .configuration
+            ))
+        case .motion:
+            kind = .motion(try container.decode(
+                MotionControlConfiguration.self,
+                forKey: .configuration
+            ))
         }
     }
 
@@ -131,6 +214,12 @@ extension ControlDefinition: Codable {
         switch kind {
         case .button(let configuration):
             try container.encode(ControlCapabilityID.button, forKey: .type)
+            try container.encode(configuration, forKey: .configuration)
+        case .joystick(let configuration):
+            try container.encode(ControlCapabilityID.joystick, forKey: .type)
+            try container.encode(configuration, forKey: .configuration)
+        case .motion(let configuration):
+            try container.encode(ControlCapabilityID.motion, forKey: .type)
             try container.encode(configuration, forKey: .configuration)
         }
     }
@@ -253,17 +342,26 @@ struct KeyChordAction: Codable, Equatable, Sendable {
     let modifiers: [KeyModifier]
 }
 
+struct MouseMoveAction: Codable, Equatable, Sendable {
+    let gain: Double
+    let deadZone: Double
+}
+
 enum ActionCapabilityID: String, Codable, CaseIterable, Equatable, Sendable {
     case keyChord
+    case mouseMove
 }
 
 enum ActionDefinition: Equatable, Sendable {
     case keyChord(KeyChordAction)
+    case mouseMove(MouseMoveAction)
 
     var acceptedInputKinds: Set<InputValueKind> {
         switch self {
         case .keyChord:
             [.none]
+        case .mouseMove:
+            [.vector2]
         }
     }
 
@@ -271,6 +369,8 @@ enum ActionDefinition: Equatable, Sendable {
         switch self {
         case .keyChord:
             .keyChord
+        case .mouseMove:
+            .mouseMove
         }
     }
 }
@@ -286,6 +386,8 @@ extension ActionDefinition: Codable {
         switch try container.decode(ActionCapabilityID.self, forKey: .type) {
         case .keyChord:
             self = .keyChord(try container.decode(KeyChordAction.self, forKey: .configuration))
+        case .mouseMove:
+            self = .mouseMove(try container.decode(MouseMoveAction.self, forKey: .configuration))
         }
     }
 
@@ -294,6 +396,9 @@ extension ActionDefinition: Codable {
         switch self {
         case .keyChord(let configuration):
             try container.encode(ActionCapabilityID.keyChord, forKey: .type)
+            try container.encode(configuration, forKey: .configuration)
+        case .mouseMove(let configuration):
+            try container.encode(ActionCapabilityID.mouseMove, forKey: .type)
             try container.encode(configuration, forKey: .configuration)
         }
     }

@@ -25,6 +25,7 @@ final class PairingClient: ObservableObject {
     private var pendingPings: [UUID: Date] = [:]
     private var disconnecting = false
     private var nextSequence: UInt64 = 1
+    private var lastContinuousSentAt: [String: Date] = [:]
 
     private let deviceID: UUID = {
         let key = "UniversalControllerDeviceID"
@@ -93,26 +94,39 @@ final class PairingClient: ObservableObject {
         roundTripMilliseconds = nil
         controller = nil
         nextSequence = 1
+        lastContinuousSentAt.removeAll()
         state = .disconnected
     }
 
-    func trigger(_ control: ControlDefinition) {
+    func sendEvent(
+        _ control: ControlDefinition,
+        event: ControlEventKind,
+        value: InputValue
+    ) {
         guard case .connected = state,
               let controller,
-              controller.controls.contains(control),
-              case .button = control.kind else { return }
+              controller.controls.contains(control) else { return }
+
+        let now = Date()
+        if event == .changed,
+           let previous = lastContinuousSentAt[control.id],
+           now.timeIntervalSince(previous) < 1.0 / 30.0 { return }
+
+        let controlEvent = ControlEvent(
+            controllerID: controller.id,
+            revision: controller.revision,
+            controlID: control.id,
+            event: event,
+            sequence: nextSequence,
+            timestamp: now,
+            value: value
+        )
 
         do {
-            try framedConnection?.send(.controlEvent(ControlEvent(
-                controllerID: controller.id,
-                revision: controller.revision,
-                controlID: control.id,
-                event: .triggered,
-                sequence: nextSequence,
-                timestamp: Date(),
-                value: .none
-            )))
+            _ = try SchemaValidator.binding(for: controlEvent, in: controller)
+            try framedConnection?.send(.controlEvent(controlEvent))
             nextSequence &+= 1
+            if event == .changed { lastContinuousSentAt[control.id] = now }
         } catch {
             fail(error.localizedDescription)
         }
@@ -230,6 +244,7 @@ final class PairingClient: ObservableObject {
                 try SchemaValidator.validate(snapshot)
                 controller = snapshot
                 nextSequence = 1
+                lastContinuousSentAt.removeAll()
             } catch {
                 fail(error.localizedDescription)
             }
@@ -302,6 +317,7 @@ final class PairingClient: ObservableObject {
         pendingPings.removeAll()
         controller = nil
         nextSequence = 1
+        lastContinuousSentAt.removeAll()
         state = .failed(message)
     }
 }

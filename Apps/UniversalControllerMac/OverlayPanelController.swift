@@ -77,7 +77,9 @@ final class OverlayPanelController {
             pairingHost: pairingHost,
             onClose: { [weak self] in self?.close() },
             onRequestPermission: { MacActionExecutor.requestNextPermission() },
-            onStartPairing: { [weak self] in self?.startPairing(context: context) },
+            onStartPairing: { [weak self] style, includeTilt in
+                self?.startPairing(context: context, style: style, includeTilt: includeTilt)
+            },
             onNextSlide: { [weak self] in
                 Task { @MainActor [weak self] in
                     await self?.sendNextSlide(context: context)
@@ -87,20 +89,50 @@ final class OverlayPanelController {
         return panel
     }
 
-    private func startPairing(context: AppContext?) {
+    private func startPairing(
+        context: AppContext?,
+        style: DemoControllerStyle,
+        includeTilt: Bool
+    ) {
         let controller: ControllerDocument?
         if let application = context?.application,
            MacActionExecutor.isKeynote(application),
            let bundleID = application.bundleIdentifier {
-            controller = ControllerDocument(
+            let target = ControllerTarget(
+                bundleIdentifier: bundleID,
+                displayName: context?.displayName ?? "Keynote"
+            )
+            switch style {
+            case .presenter:
+                controller = makePresenterController(target: target)
+            case .gamepad:
+                controller = makeGamepadController(target: target, includeTilt: includeTilt)
+            }
+        } else {
+            controller = nil
+        }
+
+        pairingHost.startSession(controller: controller)
+        if let controller, let application = context?.application,
+           let router = try? ControllerActionRouter(
+               document: controller,
+               application: application
+           ) {
+            pairingHost.onControlEvent = { [weak self] event in
+                Task { @MainActor [weak self] in
+                    await self?.route(event, using: router, context: context)
+                }
+            }
+        }
+    }
+
+    private func makePresenterController(target: ControllerTarget) -> ControllerDocument {
+        ControllerDocument(
                 schemaVersion: ControllerDocument.currentSchemaVersion,
                 id: UUID(),
                 revision: 1,
                 name: "Keynote Presenter",
-                target: ControllerTarget(
-                    bundleIdentifier: bundleID,
-                    displayName: context?.displayName ?? "Keynote"
-                ),
+                target: target,
                 layout: ControllerLayout(
                     columns: 1,
                     items: [ControllerLayoutItem(
@@ -124,22 +156,58 @@ final class OverlayPanelController {
                     ),
                 ]
             )
-        } else {
-            controller = nil
+    }
+
+    private func makeGamepadController(
+        target: ControllerTarget,
+        includeTilt: Bool
+    ) -> ControllerDocument {
+        let buttons: [(id: String, label: String, face: ButtonFace, key: SemanticKey)] = [
+            ("x", "Blackout", .x, .letterB),
+            ("y", "Advance", .y, .space),
+            ("a", "Next", .a, .rightArrow),
+            ("b", "Previous", .b, .leftArrow),
+        ]
+        var controls = [ControlDefinition.joystick(id: "stick", label: "Pointer")]
+        controls += buttons.map { .button(id: $0.id, label: $0.label, face: $0.face) }
+        var items = [ControllerLayoutItem(controlID: "stick", columnSpan: 2, rowSpan: 2)]
+        items += buttons.map { ControllerLayoutItem(controlID: $0.id, columnSpan: 1, rowSpan: 1) }
+        var bindings = [ControlBinding(
+            id: "stick-move",
+            controlID: "stick",
+            event: .changed,
+            action: .mouseMove(MouseMoveAction(gain: 14, deadZone: 0.1))
+        )]
+        bindings += buttons.map {
+            ControlBinding(
+                id: "\($0.id)-press",
+                controlID: $0.id,
+                event: .triggered,
+                action: .keyChord(KeyChordAction(key: $0.key, modifiers: []))
+            )
         }
 
-        pairingHost.startSession(controller: controller)
-        if let controller, let application = context?.application,
-           let router = try? ControllerActionRouter(
-               document: controller,
-               application: application
-           ) {
-            pairingHost.onControlEvent = { [weak self] event in
-                Task { @MainActor [weak self] in
-                    await self?.route(event, using: router, context: context)
-                }
-            }
+        if includeTilt {
+            controls.append(.tilt(id: "tilt", label: "Tilt Pointer"))
+            items.append(ControllerLayoutItem(controlID: "tilt", columnSpan: 2, rowSpan: 1))
+            bindings.append(ControlBinding(
+                id: "tilt-move",
+                controlID: "tilt",
+                event: .changed,
+                action: .mouseMove(MouseMoveAction(gain: 9, deadZone: 0.18))
+            ))
         }
+
+        return ControllerDocument(
+            schemaVersion: ControllerDocument.currentSchemaVersion,
+            id: UUID(),
+            revision: 1,
+            name: "Keynote Gamepad",
+            target: target,
+            layout: ControllerLayout(columns: 2, items: items),
+            controls: controls,
+            bindings: bindings
+        )
     }
 
     private func route(
@@ -147,6 +215,13 @@ final class OverlayPanelController {
         using router: ControllerActionRouter,
         context: AppContext?
     ) async {
+        if case .vector2(let value) = event.value,
+           let binding = try? SchemaValidator.binding(for: event, in: router.document),
+           case .mouseMove(let action) = binding.action,
+           abs(value.x) <= action.deadZone,
+           abs(value.y) <= action.deadZone {
+            return
+        }
         close()
         do {
             try await router.handle(event)

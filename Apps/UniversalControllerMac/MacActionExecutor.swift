@@ -115,6 +115,41 @@ enum MacActionExecutor {
         up.post(tap: .cghidEventTap)
     }
 
+    static func sendMouseMove(
+        _ action: MouseMoveAction,
+        value: Vector2Value,
+        to application: NSRunningApplication
+    ) throws {
+        guard !application.isTerminated else { throw MacActionError.targetQuit }
+        guard AXIsProcessTrusted() else { throw MacActionError.accessibilityRequired }
+        guard CGPreflightPostEventAccess() else { throw MacActionError.keyboardControlRequired }
+
+        func distance(_ component: Double) -> Double {
+            let magnitude = abs(component)
+            guard magnitude > action.deadZone else { return 0 }
+            return (component < 0 ? -1 : 1) *
+                (magnitude - action.deadZone) / (1 - action.deadZone) * action.gain
+        }
+
+        let dx = distance(value.x)
+        let dy = distance(value.y)
+        guard dx != 0 || dy != 0 else { return }
+
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier != application.processIdentifier {
+            guard application.activate() else { throw MacActionError.activationFailed }
+        }
+        guard let current = CGEvent(source: nil)?.location,
+              let event = CGEvent(
+                mouseEventSource: CGEventSource(stateID: .hidSystemState),
+                mouseType: .mouseMoved,
+                mouseCursorPosition: CGPoint(x: current.x + dx, y: current.y - dy),
+                mouseButton: .left
+              ) else {
+            throw MacActionError.eventUnavailable
+        }
+        event.post(tap: .cghidEventTap)
+    }
+
     private static func keyCode(for key: SemanticKey) -> CGKeyCode {
         switch key {
         case .leftArrow:

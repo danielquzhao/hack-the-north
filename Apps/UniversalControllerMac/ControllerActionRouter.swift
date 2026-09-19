@@ -31,6 +31,9 @@ struct ControllerActionRouter {
         switch binding.action {
         case .keyChord(let action):
             try await MacActionExecutor.sendKeyChord(action, to: application)
+        case .mouseMove(let action):
+            guard case .vector2(let value) = event.value else { return }
+            try MacActionExecutor.sendMouseMove(action, value: value, to: application)
         }
     }
 }
