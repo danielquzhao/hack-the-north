@@ -144,10 +144,31 @@ struct ContentView: View {
             }
 
         case .connected:
-            Button("Disconnect", role: .destructive) {
-                pairingClient.disconnect()
+            VStack(spacing: 20) {
+                if let controller = pairingClient.controller {
+                    Text(controller.name)
+                        .font(.headline)
+                    ForEach(controller.buttons) { button in
+                        Button {
+                            pairingClient.press(button)
+                        } label: {
+                            Text(button.label)
+                                .font(.title2.bold())
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 24)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                } else {
+                    Text("No demo controller. Open Keynote on the Mac and start a new pairing session.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Button("Disconnect", role: .destructive) {
+                    pairingClient.disconnect()
+                }
+                .buttonStyle(.bordered)
             }
-            .buttonStyle(.bordered)
 
         case .failed:
             VStack(spacing: 12) {

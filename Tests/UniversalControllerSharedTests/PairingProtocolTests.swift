@@ -69,6 +69,38 @@ final class PairingProtocolTests: XCTestCase {
         XCTAssertEqual(decoded, message)
     }
 
+    func testControllerSnapshotAndTapRoundTrip() throws {
+        let snapshot = ControllerSnapshot(
+            schemaVersion: ControllerSnapshot.currentVersion,
+            controllerID: UUID(),
+            revision: 1,
+            name: "Keynote Presenter",
+            targetBundleID: "com.apple.iWork.Keynote",
+            buttons: [ControllerButton(id: "next-slide", label: "Next Slide")]
+        )
+        let event = ControlEvent(
+            controllerID: snapshot.controllerID,
+            revision: snapshot.revision,
+            controlID: "next-slide"
+        )
+
+        for message in [WireMessage.schemaSnapshot(snapshot), .controlEvent(event)] {
+            let encoded = try WireCodec.encoder.encode(message)
+            XCTAssertEqual(try WireCodec.decoder.decode(WireMessage.self, from: encoded), message)
+        }
+        XCTAssertTrue(snapshot.accepts(event))
+        XCTAssertFalse(snapshot.accepts(ControlEvent(
+            controllerID: snapshot.controllerID,
+            revision: snapshot.revision + 1,
+            controlID: "next-slide"
+        )))
+        XCTAssertFalse(snapshot.accepts(ControlEvent(
+            controllerID: snapshot.controllerID,
+            revision: snapshot.revision,
+            controlID: "unknown"
+        )))
+    }
+
     func testExpiredQRCodeIsRejected() throws {
         let descriptor = PairingDescriptor(
             sessionID: UUID(),

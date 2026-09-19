@@ -1,0 +1,3 @@
+// Defaults for a fresh checkout. Each developer can override these locally.
+PHONE_BUNDLE_IDENTIFIER = dev.universalcontroller.phone
+#include? "LocalSigning.xcconfig"

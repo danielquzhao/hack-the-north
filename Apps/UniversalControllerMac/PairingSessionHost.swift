@@ -16,6 +16,9 @@ final class PairingSessionHost: ObservableObject {
     @Published private(set) var state: PairingHostState = .idle
     @Published private(set) var descriptor: PairingDescriptor?
     @Published private(set) var lastPingAt: Date?
+    @Published private(set) var controller: ControllerSnapshot?
+
+    var onControlEvent: ((ControlEvent) -> Void)?
 
     private var listener: NWListener?
     private var framedConnection: FramedConnection?
@@ -25,8 +28,9 @@ final class PairingSessionHost: ObservableObject {
     private var pendingDeviceName: String?
     private var expirationTask: Task<Void, Never>?
 
-    func startSession() {
+    func startSession(controller: ControllerSnapshot? = nil) {
         stopSession()
+        self.controller = controller
         state = .starting
 
         do {
@@ -88,6 +92,8 @@ final class PairingSessionHost: ObservableObject {
         pendingDeviceID = nil
         pendingDeviceName = nil
         lastPingAt = nil
+        controller = nil
+        onControlEvent = nil
         state = .idle
     }
 
@@ -148,6 +154,15 @@ final class PairingSessionHost: ObservableObject {
         case .ping(let ping):
             lastPingAt = Date()
             try? framedConnection?.send(.pong(Pong(id: ping.id, sentAt: ping.sentAt)))
+        case .controlEvent(let event):
+            guard case .connected = state,
+                  let controller,
+                  controller.accepts(event),
+                  event.controlID == "next-slide" else {
+                rejectConnection(code: "invalid_control_event", message: "Unknown controller button.")
+                return
+            }
+            onControlEvent?(event)
         default:
             rejectConnection(code: "unexpected_message", message: "Unexpected pairing message.")
         }
@@ -210,6 +225,9 @@ final class PairingSessionHost: ObservableObject {
                 sessionID: descriptor.sessionID,
                 macName: descriptor.macName
             )))
+            if let controller {
+                try framedConnection?.send(.schemaSnapshot(controller))
+            }
             state = .connected(deviceName)
             listener?.cancel()
             listener = nil
@@ -230,7 +248,7 @@ final class PairingSessionHost: ObservableObject {
         challenge = nil
         pendingDeviceID = nil
         pendingDeviceName = nil
-        state = descriptor?.isExpired == false ? .waiting : .failed(message)
+        state = listener != nil && descriptor?.isExpired == false ? .waiting : .failed(message)
     }
 
     private func connectionFailed(_ message: String) {

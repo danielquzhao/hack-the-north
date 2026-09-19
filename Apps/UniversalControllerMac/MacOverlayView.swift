@@ -7,6 +7,7 @@ struct MacOverlayView: View {
     @ObservedObject var pairingHost: PairingSessionHost
     let onClose: () -> Void
     let onRequestPermission: () -> Void
+    let onStartPairing: () -> Void
     let onNextSlide: () -> Void
 
     @State private var prompt = ""
@@ -162,7 +163,7 @@ struct MacOverlayView: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button("Pair iPhone") {
-                        pairingHost.startSession()
+                        onStartPairing()
                     }
                     .buttonStyle(.borderedProminent)
                 }
@@ -217,6 +218,15 @@ struct MacOverlayView: View {
                             : "Bidirectional connection verified")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        if pairingHost.controller != nil {
+                            Text("Next Slide is ready on your iPhone")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Pair from Keynote to send the demo button")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     Spacer()
                     Button("Disconnect") { pairingHost.stopSession() }
@@ -231,7 +241,7 @@ struct MacOverlayView: View {
                     Text(message)
                         .font(.subheadline)
                     Spacer()
-                    Button("New QR") { pairingHost.startSession() }
+                    Button("New QR") { onStartPairing() }
                 }
                 .padding(14)
                 .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))

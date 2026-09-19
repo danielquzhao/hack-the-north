@@ -87,6 +87,35 @@ struct Paired: Codable, Equatable, Sendable {
     let macName: String
 }
 
+struct ControllerButton: Codable, Equatable, Sendable, Identifiable {
+    let id: String
+    let label: String
+}
+
+struct ControllerSnapshot: Codable, Equatable, Sendable {
+    static let currentVersion = 1
+
+    let schemaVersion: Int
+    let controllerID: UUID
+    let revision: Int
+    let name: String
+    let targetBundleID: String
+    let buttons: [ControllerButton]
+
+    func accepts(_ event: ControlEvent) -> Bool {
+        schemaVersion == Self.currentVersion &&
+        controllerID == event.controllerID &&
+        revision == event.revision &&
+        buttons.contains { $0.id == event.controlID }
+    }
+}
+
+struct ControlEvent: Codable, Equatable, Sendable {
+    let controllerID: UUID
+    let revision: Int
+    let controlID: String
+}
+
 struct Ping: Codable, Equatable, Sendable {
     let id: UUID
     let sentAt: Date
@@ -107,6 +136,8 @@ enum WireMessage: Equatable, Sendable {
     case serverChallenge(ServerChallenge)
     case pairingProof(PairingProof)
     case paired(Paired)
+    case schemaSnapshot(ControllerSnapshot)
+    case controlEvent(ControlEvent)
     case ping(Ping)
     case pong(Pong)
     case error(ProtocolErrorMessage)
@@ -118,6 +149,8 @@ extension WireMessage: Codable {
         case serverChallenge
         case pairingProof
         case paired
+        case schemaSnapshot
+        case controlEvent
         case ping
         case pong
         case error
@@ -139,6 +172,10 @@ extension WireMessage: Codable {
             self = .pairingProof(try container.decode(PairingProof.self, forKey: .payload))
         case .paired:
             self = .paired(try container.decode(Paired.self, forKey: .payload))
+        case .schemaSnapshot:
+            self = .schemaSnapshot(try container.decode(ControllerSnapshot.self, forKey: .payload))
+        case .controlEvent:
+            self = .controlEvent(try container.decode(ControlEvent.self, forKey: .payload))
         case .ping:
             self = .ping(try container.decode(Ping.self, forKey: .payload))
         case .pong:
@@ -162,6 +199,12 @@ extension WireMessage: Codable {
             try container.encode(payload, forKey: .payload)
         case .paired(let payload):
             try container.encode(Kind.paired, forKey: .kind)
+            try container.encode(payload, forKey: .payload)
+        case .schemaSnapshot(let payload):
+            try container.encode(Kind.schemaSnapshot, forKey: .kind)
+            try container.encode(payload, forKey: .payload)
+        case .controlEvent(let payload):
+            try container.encode(Kind.controlEvent, forKey: .kind)
             try container.encode(payload, forKey: .payload)
         case .ping(let payload):
             try container.encode(Kind.ping, forKey: .kind)

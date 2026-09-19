@@ -77,6 +77,7 @@ final class OverlayPanelController {
             pairingHost: pairingHost,
             onClose: { [weak self] in self?.close() },
             onRequestPermission: { MacActionExecutor.requestNextPermission() },
+            onStartPairing: { [weak self] in self?.startPairing(context: context) },
             onNextSlide: { [weak self] in
                 Task { @MainActor [weak self] in
                     await self?.sendNextSlide(context: context)
@@ -84,6 +85,33 @@ final class OverlayPanelController {
             }
         ))
         return panel
+    }
+
+    private func startPairing(context: AppContext?) {
+        let controller: ControllerSnapshot?
+        if let application = context?.application,
+           MacActionExecutor.isKeynote(application),
+           let bundleID = application.bundleIdentifier {
+            controller = ControllerSnapshot(
+                schemaVersion: ControllerSnapshot.currentVersion,
+                controllerID: UUID(),
+                revision: 1,
+                name: "Keynote Presenter",
+                targetBundleID: bundleID,
+                buttons: [ControllerButton(id: "next-slide", label: "Next Slide")]
+            )
+        } else {
+            controller = nil
+        }
+
+        pairingHost.startSession(controller: controller)
+        if controller != nil {
+            pairingHost.onControlEvent = { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await self?.sendNextSlide(context: context)
+                }
+            }
+        }
     }
 
     private func sendNextSlide(context: AppContext?) async {

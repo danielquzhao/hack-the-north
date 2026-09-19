@@ -6,9 +6,5 @@
 	<array>
 		<string>_universalctrl._tcp</string>
 	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>Scan the pairing QR code displayed by Universal Controller on your Mac.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Connect directly to your Mac and send controller input.</string>
 </dict>
 </plist>

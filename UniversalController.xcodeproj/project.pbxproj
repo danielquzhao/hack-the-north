@@ -42,6 +42,7 @@
 		B10000000000000000000015 /* QRCodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCodeScannerView.swift; sourceTree = "<group>"; };
 		B10000000000000000000016 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B10000000000000000000017 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B10000000000000000000018 /* SharedSigning.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = SharedSigning.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -67,6 +68,7 @@
 			children = (
 				C10000000000000000000002 /* Apps */,
 				C10000000000000000000006 /* Shared */,
+				B10000000000000000000018 /* SharedSigning.xcconfig */,
 				C10000000000000000000005 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -288,6 +290,7 @@
 		};
 		G10000000000000000000003 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = B10000000000000000000018 /* SharedSigning.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -318,6 +321,7 @@
 		};
 		G10000000000000000000004 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = B10000000000000000000018 /* SharedSigning.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -348,14 +352,16 @@
 		};
 		G10000000000000000000005 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = B10000000000000000000018 /* SharedSigning.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5BA4B43Y74;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Apps/UniversalControllerPhone/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Universal Controller";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR code displayed by Universal Controller on your Mac.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect directly to your Mac and send controller input.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -364,7 +370,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.universalcontroller.phone;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PHONE_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -379,14 +385,16 @@
 		};
 		G10000000000000000000006 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = B10000000000000000000018 /* SharedSigning.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5BA4B43Y74;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Apps/UniversalControllerPhone/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Universal Controller";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR code displayed by Universal Controller on your Mac.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect directly to your Mac and send controller input.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -395,7 +403,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.universalcontroller.phone;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PHONE_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

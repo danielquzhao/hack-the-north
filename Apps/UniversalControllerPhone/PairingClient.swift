@@ -16,6 +16,7 @@ enum PairingClientState: Equatable {
 final class PairingClient: ObservableObject {
     @Published private(set) var state: PairingClientState = .disconnected
     @Published private(set) var roundTripMilliseconds: Int?
+    @Published private(set) var controller: ControllerSnapshot?
 
     private var descriptor: PairingDescriptor?
     private var browser: NWBrowser?
@@ -79,7 +80,24 @@ final class PairingClient: ObservableObject {
         descriptor = nil
         pendingPings.removeAll()
         roundTripMilliseconds = nil
+        controller = nil
         state = .disconnected
+    }
+
+    func press(_ button: ControllerButton) {
+        guard case .connected = state,
+              let controller,
+              controller.buttons.contains(button) else { return }
+
+        do {
+            try framedConnection?.send(.controlEvent(ControlEvent(
+                controllerID: controller.controllerID,
+                revision: controller.revision,
+                controlID: button.id
+            )))
+        } catch {
+            fail(error.localizedDescription)
+        }
     }
 
     func retry() {
@@ -182,6 +200,16 @@ final class PairingClient: ObservableObject {
         case .pong(let pong):
             guard let startedAt = pendingPings.removeValue(forKey: pong.id) else { return }
             roundTripMilliseconds = Int(Date().timeIntervalSince(startedAt) * 1_000)
+        case .schemaSnapshot(let snapshot):
+            guard case .connected = state,
+                  snapshot.schemaVersion == ControllerSnapshot.currentVersion,
+                  snapshot.revision > 0,
+                  snapshot.buttons.count <= 32,
+                  Set(snapshot.buttons.map(\.id)).count == snapshot.buttons.count else {
+                fail("The Mac sent an unsupported controller.")
+                return
+            }
+            controller = snapshot
         case .error(let error):
             fail(error.message)
         case .ping(let ping):
@@ -247,6 +275,7 @@ final class PairingClient: ObservableObject {
         framedConnection?.cancel()
         framedConnection = nil
         pendingPings.removeAll()
+        controller = nil
         state = .failed(message)
     }
 }
