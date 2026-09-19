@@ -79,12 +79,22 @@ final class PairingSessionHost: ObservableObject {
         }
     }
 
-    func stopSession() {
+    func stopSession(notifyPeer: Bool = true) {
+        let wasConnected: Bool
+        if case .connected = state {
+            wasConnected = true
+        } else {
+            wasConnected = false
+        }
         expirationTask?.cancel()
         expirationTask = nil
         listener?.cancel()
         listener = nil
-        framedConnection?.cancel()
+        if wasConnected && notifyPeer {
+            framedConnection?.closeGracefully()
+        } else {
+            framedConnection?.cancel()
+        }
         framedConnection = nil
         descriptor = nil
         secret = nil
@@ -125,6 +135,9 @@ final class PairingSessionHost: ObservableObject {
         framedConnection.onProtocolError = { [weak self] error in
             self?.connectionFailed(error.localizedDescription)
         }
+        framedConnection.onConnectionClosed = { [weak self] in
+            self?.connectionFailed("The iPhone disconnected.")
+        }
         framedConnection.onStateChange = { [weak self] connectionState in
             self?.handleConnectionState(connectionState)
         }
@@ -137,9 +150,7 @@ final class PairingSessionHost: ObservableObject {
         case .failed(let error):
             connectionFailed(error.localizedDescription)
         case .cancelled:
-            if case .connected = state {
-                state = .failed("The iPhone disconnected.")
-            }
+            connectionFailed("The iPhone disconnected.")
         default:
             break
         }
@@ -163,6 +174,8 @@ final class PairingSessionHost: ObservableObject {
                 return
             }
             onControlEvent?(event)
+        case .disconnect:
+            stopSession(notifyPeer: false)
         default:
             rejectConnection(code: "unexpected_message", message: "Unexpected pairing message.")
         }

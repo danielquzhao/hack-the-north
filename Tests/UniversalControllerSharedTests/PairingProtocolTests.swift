@@ -56,17 +56,18 @@ final class PairingProtocolTests: XCTestCase {
     }
 
     func testWireMessageRoundTrips() throws {
-        let message = WireMessage.clientHello(ClientHello(
+        let hello = WireMessage.clientHello(ClientHello(
             protocolVersion: PairingProtocol.version,
             sessionID: UUID(),
             deviceID: UUID(),
             deviceName: "Test iPhone"
         ))
 
-        let data = try WireCodec.encoder.encode(message)
-        let decoded = try WireCodec.decoder.decode(WireMessage.self, from: data)
-
-        XCTAssertEqual(decoded, message)
+        for message in [hello, .disconnect] {
+            let data = try WireCodec.encoder.encode(message)
+            let decoded = try WireCodec.decoder.decode(WireMessage.self, from: data)
+            XCTAssertEqual(decoded, message)
+        }
     }
 
     func testControllerSnapshotAndTapRoundTrip() throws {

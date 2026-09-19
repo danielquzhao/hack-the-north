@@ -138,6 +138,7 @@ enum WireMessage: Equatable, Sendable {
     case paired(Paired)
     case schemaSnapshot(ControllerSnapshot)
     case controlEvent(ControlEvent)
+    case disconnect
     case ping(Ping)
     case pong(Pong)
     case error(ProtocolErrorMessage)
@@ -151,6 +152,7 @@ extension WireMessage: Codable {
         case paired
         case schemaSnapshot
         case controlEvent
+        case disconnect
         case ping
         case pong
         case error
@@ -176,6 +178,8 @@ extension WireMessage: Codable {
             self = .schemaSnapshot(try container.decode(ControllerSnapshot.self, forKey: .payload))
         case .controlEvent:
             self = .controlEvent(try container.decode(ControlEvent.self, forKey: .payload))
+        case .disconnect:
+            self = .disconnect
         case .ping:
             self = .ping(try container.decode(Ping.self, forKey: .payload))
         case .pong:
@@ -206,6 +210,8 @@ extension WireMessage: Codable {
         case .controlEvent(let payload):
             try container.encode(Kind.controlEvent, forKey: .kind)
             try container.encode(payload, forKey: .payload)
+        case .disconnect:
+            try container.encode(Kind.disconnect, forKey: .kind)
         case .ping(let payload):
             try container.encode(Kind.ping, forKey: .kind)
             try container.encode(payload, forKey: .payload)

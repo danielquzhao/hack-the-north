@@ -8,6 +8,7 @@ final class FramedConnection {
     var onMessage: ((WireMessage) -> Void)?
     var onStateChange: ((NWConnection.State) -> Void)?
     var onProtocolError: ((Error) -> Void)?
+    var onConnectionClosed: (() -> Void)?
 
     private var receiveBuffer = Data()
     private var started = false
@@ -30,14 +31,7 @@ final class FramedConnection {
     }
 
     func send(_ message: WireMessage) throws {
-        let payload = try WireCodec.encoder.encode(message)
-        guard payload.count <= PairingProtocol.maximumFrameSize else {
-            throw PairingProtocolError.frameTooLarge
-        }
-
-        var networkLength = UInt32(payload.count).bigEndian
-        var frame = withUnsafeBytes(of: &networkLength) { Data($0) }
-        frame.append(payload)
+        let frame = try makeFrame(for: message)
         connection.send(content: frame, completion: .contentProcessed { [weak self] error in
             guard let error else { return }
             Task { @MainActor [weak self] in
@@ -46,14 +40,51 @@ final class FramedConnection {
         })
     }
 
+    func closeGracefully() {
+        let connection = self.connection
+        clearHandlers()
+        started = false
+        receiveBuffer.removeAll(keepingCapacity: false)
+
+        do {
+            let frame = try makeFrame(for: .disconnect)
+            connection.send(content: frame, completion: .contentProcessed { _ in
+                connection.cancel()
+            })
+        } catch {
+            connection.cancel()
+        }
+    }
+
     func cancel() {
-        connection.stateUpdateHandler = nil
+        clearHandlers()
         connection.cancel()
         started = false
         receiveBuffer.removeAll(keepingCapacity: false)
     }
 
+    private func makeFrame(for message: WireMessage) throws -> Data {
+        let payload = try WireCodec.encoder.encode(message)
+        guard payload.count <= PairingProtocol.maximumFrameSize else {
+            throw PairingProtocolError.frameTooLarge
+        }
+
+        var networkLength = UInt32(payload.count).bigEndian
+        var frame = withUnsafeBytes(of: &networkLength) { Data($0) }
+        frame.append(payload)
+        return frame
+    }
+
+    private func clearHandlers() {
+        onMessage = nil
+        onStateChange = nil
+        onProtocolError = nil
+        onConnectionClosed = nil
+        connection.stateUpdateHandler = nil
+    }
+
     private func receiveNextChunk() {
+        guard started else { return }
         connection.receive(
             minimumIncompleteLength: 1,
             maximumLength: 64 * 1024
@@ -66,11 +97,14 @@ final class FramedConnection {
                     self.processFrames()
                 }
 
+                guard self.started else { return }
+
                 if let error {
                     self.onProtocolError?(error)
                     return
                 }
                 if isComplete {
+                    self.onConnectionClosed?()
                     return
                 }
                 self.receiveNextChunk()

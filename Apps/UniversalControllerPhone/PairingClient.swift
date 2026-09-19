@@ -69,13 +69,23 @@ final class PairingClient: ObservableObject {
         scheduleTimeout()
     }
 
-    func disconnect() {
+    func disconnect(notifyPeer: Bool = true) {
+        let wasConnected: Bool
+        if case .connected = state {
+            wasConnected = true
+        } else {
+            wasConnected = false
+        }
         disconnecting = true
         timeoutTask?.cancel()
         timeoutTask = nil
         browser?.cancel()
         browser = nil
-        framedConnection?.cancel()
+        if wasConnected && notifyPeer {
+            framedConnection?.closeGracefully()
+        } else {
+            framedConnection?.cancel()
+        }
         framedConnection = nil
         descriptor = nil
         pendingPings.removeAll()
@@ -146,6 +156,9 @@ final class PairingClient: ObservableObject {
         framedConnection.onProtocolError = { [weak self] error in
             self?.fail(error.localizedDescription)
         }
+        framedConnection.onConnectionClosed = { [weak self] in
+            self?.fail("The Mac disconnected.")
+        }
         framedConnection.onStateChange = { [weak self] connectionState in
             self?.handleConnectionState(connectionState)
         }
@@ -160,7 +173,7 @@ final class PairingClient: ObservableObject {
         case .failed(let error):
             fail("Could not connect to the Mac: \(error.localizedDescription)")
         case .cancelled:
-            if !disconnecting, case .connected = state {
+            if !disconnecting {
                 fail("The Mac disconnected.")
             }
         default:
@@ -210,6 +223,8 @@ final class PairingClient: ObservableObject {
                 return
             }
             controller = snapshot
+        case .disconnect:
+            disconnect(notifyPeer: false)
         case .error(let error):
             fail(error.message)
         case .ping(let ping):

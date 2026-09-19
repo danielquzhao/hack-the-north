@@ -26,6 +26,8 @@ On a physical iPhone:
 
 The phone authenticates with the one-time secret in the QR and automatically sends a ping. A round-trip time on the phone and **Bidirectional connection verified** on the Mac confirm that messages work in both directions.
 
+Disconnecting on either device clears the paired state on the other. If a device quits or the connection closes unexpectedly, the other device reports the lost connection so you can pair again.
+
 To test the complete path, start a Keynote slideshow and tap **Next Slide** on the paired iPhone. The Mac activates the Keynote app captured when pairing began and sends Right Arrow. If permissions are missing or Keynote has quit, the Mac overlay shows the error.
 
 QR scanning requires a physical iPhone. The simulator can build and display the pairing screen, but VisionKit does not provide camera scanning there. Both devices should be on the same Wi-Fi network; the Network framework configuration also opts into Apple peer-to-peer networking.
