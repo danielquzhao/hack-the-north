@@ -19,6 +19,7 @@ final class PairingSessionHost: ObservableObject {
     @Published private(set) var controller: ControllerDocument?
 
     var onControlEvent: ((ControlEvent) -> Void)?
+    var onConnectionEnded: (() -> Void)?
 
     private var listener: NWListener?
     private var framedConnection: FramedConnection?
@@ -91,6 +92,8 @@ final class PairingSessionHost: ObservableObject {
     }
 
     func stopSession(notifyPeer: Bool = true) {
+        onConnectionEnded?()
+        onConnectionEnded = nil
         let wasConnected: Bool
         if case .connected = state {
             wasConnected = true
@@ -272,6 +275,11 @@ final class PairingSessionHost: ObservableObject {
     }
 
     private func rejectConnection(code: String, message: String) {
+        if case .connected = state {
+            onConnectionEnded?()
+            onConnectionEnded = nil
+            onControlEvent = nil
+        }
         try? framedConnection?.send(.error(ProtocolErrorMessage(code: code, message: message)))
         framedConnection?.cancel()
         framedConnection = nil
@@ -282,6 +290,11 @@ final class PairingSessionHost: ObservableObject {
     }
 
     private func connectionFailed(_ message: String) {
+        if case .connected = state {
+            onConnectionEnded?()
+            onConnectionEnded = nil
+            onControlEvent = nil
+        }
         framedConnection?.cancel()
         framedConnection = nil
         challenge = nil
@@ -305,6 +318,9 @@ final class PairingSessionHost: ObservableObject {
     }
 
     private func expireSession() {
+        onConnectionEnded?()
+        onConnectionEnded = nil
+        onControlEvent = nil
         listener?.cancel()
         listener = nil
         framedConnection?.cancel()

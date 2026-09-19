@@ -24,7 +24,7 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
             ControlCapabilityDescriptor(
                 id: .button,
                 outputKind: .none,
-                events: [.triggered]
+                events: [.triggered, .began, .ended]
             ),
             ControlCapabilityDescriptor(
                 id: .joystick,
@@ -196,7 +196,11 @@ enum SchemaValidator {
             abs(value.x) > 1 || abs(value.y) > 1) {
             throw error("Control event vector must be between -1 and 1.")
         }
-        guard let binding = document.binding(controlID: event.controlID, event: event.event) else {
+        let binding = document.binding(controlID: event.controlID, event: event.event)
+            ?? (event.event == .began || event.event == .ended
+                ? document.binding(controlID: event.controlID, event: .triggered)
+                : nil)
+        guard let binding else {
             throw error("Control event has no action binding.")
         }
         return binding

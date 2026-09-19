@@ -72,6 +72,25 @@ enum MacActionExecutor {
         _ action: KeyChordAction,
         to application: NSRunningApplication
     ) async throws {
+        try await prepareKeyTarget(application)
+        try postKeyChord(action, down: true)
+        try postKeyChord(action, down: false)
+    }
+
+    static func pressKeyChord(
+        _ action: KeyChordAction,
+        to application: NSRunningApplication
+    ) async throws {
+        try await prepareKeyTarget(application)
+        try postKeyChord(action, down: true)
+    }
+
+    static func releaseKeyChord(_ action: KeyChordAction) {
+        // Always release, even after focus or permissions change, to avoid a stuck key.
+        try? postKeyChord(action, down: false)
+    }
+
+    private static func prepareKeyTarget(_ application: NSRunningApplication) async throws {
         guard !application.isTerminated else {
             throw MacActionError.targetQuit
         }
@@ -102,17 +121,17 @@ enum MacActionExecutor {
             throw MacActionError.activationFailed
         }
 
+    }
+
+    private static func postKeyChord(_ action: KeyChordAction, down: Bool) throws {
         let source = CGEventSource(stateID: .hidSystemState)
         let keyCode = keyCode(for: action.key)
         let flags = eventFlags(for: action.modifiers)
-        guard let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
-              let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) else {
+        guard let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: down) else {
             throw MacActionError.eventUnavailable
         }
-        down.flags = flags
-        up.flags = flags
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
+        event.flags = flags
+        event.post(tap: .cghidEventTap)
     }
 
     static func sendMouseMove(

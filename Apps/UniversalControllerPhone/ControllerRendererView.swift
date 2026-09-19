@@ -74,7 +74,8 @@ struct ControllerRendererView: View {
             ButtonControlView(
                 control: control,
                 configuration: configuration,
-                onTrigger: { onEvent(control, .triggered, .none) }
+                onPress: { onEvent(control, .began, .none) },
+                onRelease: { onEvent(control, .ended, .none) }
             )
         case .joystick(let configuration):
             JoystickControlView(
@@ -103,7 +104,10 @@ private struct ControllerLayoutRow: Identifiable {
 private struct ButtonControlView: View {
     let control: ControlDefinition
     let configuration: ButtonControlConfiguration
-    let onTrigger: () -> Void
+    let onPress: () -> Void
+    let onRelease: () -> Void
+    @State private var isPressed = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -120,15 +124,19 @@ private struct ButtonControlView: View {
                 gamepadButton
             }
         }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in press() }
+                .onEnded { _ in release() }
+        )
+        .onDisappear { release() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { release() }
+        }
     }
 
     private var button: some View {
-        Button {
-            if configuration.hapticsEnabled {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            }
-            onTrigger()
-        } label: {
+        Button {} label: {
             Text(control.label)
                 .font(.title2.bold())
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -137,12 +145,7 @@ private struct ButtonControlView: View {
     }
 
     private var gamepadButton: some View {
-        Button {
-            if configuration.hapticsEnabled {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            }
-            onTrigger()
-        } label: {
+        Button {} label: {
             VStack(spacing: 7) {
                 Text(configuration.face.rawValue.uppercased())
                     .font(.system(size: 29, weight: .heavy, design: .rounded))
@@ -178,6 +181,21 @@ private struct ButtonControlView: View {
         case .x: .blue
         case .y: .orange
         }
+    }
+
+    private func press() {
+        guard !isPressed else { return }
+        isPressed = true
+        if configuration.hapticsEnabled {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        }
+        onPress()
+    }
+
+    private func release() {
+        guard isPressed else { return }
+        isPressed = false
+        onRelease()
     }
 }
 

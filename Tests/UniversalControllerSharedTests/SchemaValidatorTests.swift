@@ -9,7 +9,7 @@ final class SchemaValidatorTests: XCTestCase {
             [ControlCapabilityDescriptor(
                 id: .button,
                 outputKind: .none,
-                events: [.triggered]
+                events: [.triggered, .began, .ended]
             ), ControlCapabilityDescriptor(
                 id: .joystick,
                 outputKind: .vector2,
@@ -36,6 +36,22 @@ final class SchemaValidatorTests: XCTestCase {
 
     func testValidButtonControllerPassesValidation() {
         XCTAssertNoThrow(try SchemaValidator.validate(makeDocument()))
+    }
+
+    func testButtonPressAndReleaseUseExistingKeyBinding() throws {
+        let document = makeDocument()
+        for kind in [ControlEventKind.began, .ended] {
+            let event = ControlEvent(
+                controllerID: document.id,
+                revision: document.revision,
+                controlID: "next",
+                event: kind,
+                sequence: kind == .began ? 1 : 2,
+                timestamp: Date(),
+                value: .none
+            )
+            XCTAssertEqual(try SchemaValidator.binding(for: event, in: document).id, "next-binding")
+        }
     }
 
     func testDuplicateControlIDsAreRejected() {

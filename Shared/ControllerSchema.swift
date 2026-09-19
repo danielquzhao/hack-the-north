@@ -127,7 +127,7 @@ enum ControlKind: Equatable, Sendable {
     var supportedEvents: Set<ControlEventKind> {
         switch self {
         case .button:
-            [.triggered]
+            [.triggered, .began, .ended]
         case .joystick, .motion:
             [.changed]
         }
@@ -319,7 +319,7 @@ struct ControlEvent: Codable, Equatable, Sendable {
     let value: InputValue
 }
 
-enum SemanticKey: String, Codable, CaseIterable, Equatable, Sendable {
+enum SemanticKey: String, Codable, CaseIterable, Hashable, Sendable {
     case leftArrow
     case rightArrow
     case upArrow
@@ -337,7 +337,7 @@ enum KeyModifier: String, Codable, CaseIterable, Equatable, Hashable, Sendable {
     case control
 }
 
-struct KeyChordAction: Codable, Equatable, Sendable {
+struct KeyChordAction: Codable, Hashable, Sendable {
     let key: SemanticKey
     let modifiers: [KeyModifier]
 }

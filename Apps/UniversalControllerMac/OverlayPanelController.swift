@@ -148,8 +148,12 @@ final class OverlayPanelController {
                document: controller,
                application: application
            ) {
+            pairingHost.onConnectionEnded = { router.deactivate() }
+            var pendingEvent: Task<Void, Never>?
             pairingHost.onControlEvent = { [weak self] event in
-                Task { @MainActor [weak self] in
+                let previous = pendingEvent
+                pendingEvent = Task { @MainActor [weak self] in
+                    await previous?.value
                     await self?.route(event, using: router, context: context)
                 }
             }
