@@ -87,35 +87,6 @@ struct Paired: Codable, Equatable, Sendable {
     let macName: String
 }
 
-struct ControllerButton: Codable, Equatable, Sendable, Identifiable {
-    let id: String
-    let label: String
-}
-
-struct ControllerSnapshot: Codable, Equatable, Sendable {
-    static let currentVersion = 1
-
-    let schemaVersion: Int
-    let controllerID: UUID
-    let revision: Int
-    let name: String
-    let targetBundleID: String
-    let buttons: [ControllerButton]
-
-    func accepts(_ event: ControlEvent) -> Bool {
-        schemaVersion == Self.currentVersion &&
-        controllerID == event.controllerID &&
-        revision == event.revision &&
-        buttons.contains { $0.id == event.controlID }
-    }
-}
-
-struct ControlEvent: Codable, Equatable, Sendable {
-    let controllerID: UUID
-    let revision: Int
-    let controlID: String
-}
-
 struct Ping: Codable, Equatable, Sendable {
     let id: UUID
     let sentAt: Date
@@ -136,7 +107,7 @@ enum WireMessage: Equatable, Sendable {
     case serverChallenge(ServerChallenge)
     case pairingProof(PairingProof)
     case paired(Paired)
-    case schemaSnapshot(ControllerSnapshot)
+    case schemaSnapshot(ControllerDocument)
     case controlEvent(ControlEvent)
     case disconnect
     case ping(Ping)
@@ -175,7 +146,7 @@ extension WireMessage: Codable {
         case .paired:
             self = .paired(try container.decode(Paired.self, forKey: .payload))
         case .schemaSnapshot:
-            self = .schemaSnapshot(try container.decode(ControllerSnapshot.self, forKey: .payload))
+            self = .schemaSnapshot(try container.decode(ControllerDocument.self, forKey: .payload))
         case .controlEvent:
             self = .controlEvent(try container.decode(ControlEvent.self, forKey: .payload))
         case .disconnect:

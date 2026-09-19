@@ -148,16 +148,18 @@ struct ContentView: View {
                 if let controller = pairingClient.controller {
                     Text(controller.name)
                         .font(.headline)
-                    ForEach(controller.buttons) { button in
-                        Button {
-                            pairingClient.press(button)
-                        } label: {
-                            Text(button.label)
-                                .font(.title2.bold())
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 24)
+                    ForEach(controller.controls) { control in
+                        if case .button = control.kind {
+                            Button {
+                                pairingClient.trigger(control)
+                            } label: {
+                                Text(control.label)
+                                    .font(.title2.bold())
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 24)
+                            }
+                            .buttonStyle(.borderedProminent)
                         }
-                        .buttonStyle(.borderedProminent)
                     }
                 } else {
                     Text("No demo controller. Open Keynote on the Mac and start a new pairing session.")

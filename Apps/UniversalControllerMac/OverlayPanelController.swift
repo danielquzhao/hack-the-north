@@ -88,17 +88,41 @@ final class OverlayPanelController {
     }
 
     private func startPairing(context: AppContext?) {
-        let controller: ControllerSnapshot?
+        let controller: ControllerDocument?
         if let application = context?.application,
            MacActionExecutor.isKeynote(application),
            let bundleID = application.bundleIdentifier {
-            controller = ControllerSnapshot(
-                schemaVersion: ControllerSnapshot.currentVersion,
-                controllerID: UUID(),
+            controller = ControllerDocument(
+                schemaVersion: ControllerDocument.currentSchemaVersion,
+                id: UUID(),
                 revision: 1,
                 name: "Keynote Presenter",
-                targetBundleID: bundleID,
-                buttons: [ControllerButton(id: "next-slide", label: "Next Slide")]
+                target: ControllerTarget(
+                    bundleIdentifier: bundleID,
+                    displayName: context?.displayName ?? "Keynote"
+                ),
+                layout: ControllerLayout(
+                    columns: 1,
+                    items: [ControllerLayoutItem(
+                        controlID: "next-slide",
+                        columnSpan: 1,
+                        rowSpan: 1
+                    )]
+                ),
+                controls: [
+                    .button(id: "next-slide", label: "Next Slide"),
+                ],
+                bindings: [
+                    ControlBinding(
+                        id: "next-slide-binding",
+                        controlID: "next-slide",
+                        event: .triggered,
+                        action: .keyChord(KeyChordAction(
+                            key: .rightArrow,
+                            modifiers: []
+                        ))
+                    ),
+                ]
             )
         } else {
             controller = nil

@@ -16,7 +16,7 @@ final class PairingSessionHost: ObservableObject {
     @Published private(set) var state: PairingHostState = .idle
     @Published private(set) var descriptor: PairingDescriptor?
     @Published private(set) var lastPingAt: Date?
-    @Published private(set) var controller: ControllerSnapshot?
+    @Published private(set) var controller: ControllerDocument?
 
     var onControlEvent: ((ControlEvent) -> Void)?
 
@@ -27,9 +27,20 @@ final class PairingSessionHost: ObservableObject {
     private var pendingDeviceID: UUID?
     private var pendingDeviceName: String?
     private var expirationTask: Task<Void, Never>?
+    private var lastSequenceByControlID: [String: UInt64] = [:]
 
-    func startSession(controller: ControllerSnapshot? = nil) {
+    func startSession(controller: ControllerDocument? = nil) {
         stopSession()
+
+        if let controller {
+            do {
+                try SchemaValidator.validate(controller)
+            } catch {
+                state = .failed(error.localizedDescription)
+                return
+            }
+        }
+
         self.controller = controller
         state = .starting
 
@@ -104,6 +115,7 @@ final class PairingSessionHost: ObservableObject {
         lastPingAt = nil
         controller = nil
         onControlEvent = nil
+        lastSequenceByControlID.removeAll()
         state = .idle
     }
 
@@ -166,14 +178,19 @@ final class PairingSessionHost: ObservableObject {
             lastPingAt = Date()
             try? framedConnection?.send(.pong(Pong(id: ping.id, sentAt: ping.sentAt)))
         case .controlEvent(let event):
-            guard case .connected = state,
-                  let controller,
-                  controller.accepts(event),
-                  event.controlID == "next-slide" else {
-                rejectConnection(code: "invalid_control_event", message: "Unknown controller button.")
+            guard case .connected = state, let controller else {
+                rejectConnection(code: "invalid_control_event", message: "No controller is active.")
                 return
             }
-            onControlEvent?(event)
+            do {
+                _ = try SchemaValidator.binding(for: event, in: controller)
+                let previousSequence = lastSequenceByControlID[event.controlID] ?? 0
+                guard event.sequence > previousSequence else { return }
+                lastSequenceByControlID[event.controlID] = event.sequence
+                onControlEvent?(event)
+            } catch {
+                rejectConnection(code: "invalid_control_event", message: error.localizedDescription)
+            }
         case .disconnect:
             stopSession(notifyPeer: false)
         default:

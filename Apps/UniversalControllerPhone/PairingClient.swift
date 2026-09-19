@@ -16,7 +16,7 @@ enum PairingClientState: Equatable {
 final class PairingClient: ObservableObject {
     @Published private(set) var state: PairingClientState = .disconnected
     @Published private(set) var roundTripMilliseconds: Int?
-    @Published private(set) var controller: ControllerSnapshot?
+    @Published private(set) var controller: ControllerDocument?
 
     private var descriptor: PairingDescriptor?
     private var browser: NWBrowser?
@@ -24,6 +24,7 @@ final class PairingClient: ObservableObject {
     private var timeoutTask: Task<Void, Never>?
     private var pendingPings: [UUID: Date] = [:]
     private var disconnecting = false
+    private var nextSequence: UInt64 = 1
 
     private let deviceID: UUID = {
         let key = "UniversalControllerDeviceID"
@@ -91,20 +92,27 @@ final class PairingClient: ObservableObject {
         pendingPings.removeAll()
         roundTripMilliseconds = nil
         controller = nil
+        nextSequence = 1
         state = .disconnected
     }
 
-    func press(_ button: ControllerButton) {
+    func trigger(_ control: ControlDefinition) {
         guard case .connected = state,
               let controller,
-              controller.buttons.contains(button) else { return }
+              controller.controls.contains(control),
+              case .button = control.kind else { return }
 
         do {
             try framedConnection?.send(.controlEvent(ControlEvent(
-                controllerID: controller.controllerID,
+                controllerID: controller.id,
                 revision: controller.revision,
-                controlID: button.id
+                controlID: control.id,
+                event: .triggered,
+                sequence: nextSequence,
+                timestamp: Date(),
+                value: .none
             )))
+            nextSequence &+= 1
         } catch {
             fail(error.localizedDescription)
         }
@@ -214,15 +222,17 @@ final class PairingClient: ObservableObject {
             guard let startedAt = pendingPings.removeValue(forKey: pong.id) else { return }
             roundTripMilliseconds = Int(Date().timeIntervalSince(startedAt) * 1_000)
         case .schemaSnapshot(let snapshot):
-            guard case .connected = state,
-                  snapshot.schemaVersion == ControllerSnapshot.currentVersion,
-                  snapshot.revision > 0,
-                  snapshot.buttons.count <= 32,
-                  Set(snapshot.buttons.map(\.id)).count == snapshot.buttons.count else {
+            guard case .connected = state else {
                 fail("The Mac sent an unsupported controller.")
                 return
             }
-            controller = snapshot
+            do {
+                try SchemaValidator.validate(snapshot)
+                controller = snapshot
+                nextSequence = 1
+            } catch {
+                fail(error.localizedDescription)
+            }
         case .disconnect:
             disconnect(notifyPeer: false)
         case .error(let error):
@@ -291,6 +301,7 @@ final class PairingClient: ObservableObject {
         framedConnection = nil
         pendingPings.removeAll()
         controller = nil
+        nextSequence = 1
         state = .failed(message)
     }
 }

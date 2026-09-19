@@ -70,36 +70,51 @@ final class PairingProtocolTests: XCTestCase {
         }
     }
 
-    func testControllerSnapshotAndTapRoundTrip() throws {
-        let snapshot = ControllerSnapshot(
-            schemaVersion: ControllerSnapshot.currentVersion,
-            controllerID: UUID(),
+    func testControllerDocumentAndEventRoundTrip() throws {
+        let document = ControllerDocument(
+            schemaVersion: ControllerDocument.currentSchemaVersion,
+            id: UUID(),
             revision: 1,
             name: "Keynote Presenter",
-            targetBundleID: "com.apple.iWork.Keynote",
-            buttons: [ControllerButton(id: "next-slide", label: "Next Slide")]
+            target: ControllerTarget(
+                bundleIdentifier: "com.apple.iWork.Keynote",
+                displayName: "Keynote"
+            ),
+            layout: ControllerLayout(
+                columns: 1,
+                items: [ControllerLayoutItem(
+                    controlID: "next-slide",
+                    columnSpan: 1,
+                    rowSpan: 1
+                )]
+            ),
+            controls: [.button(id: "next-slide", label: "Next Slide")],
+            bindings: [ControlBinding(
+                id: "next-slide-binding",
+                controlID: "next-slide",
+                event: .triggered,
+                action: .keyChord(KeyChordAction(key: .rightArrow, modifiers: []))
+            )]
         )
         let event = ControlEvent(
-            controllerID: snapshot.controllerID,
-            revision: snapshot.revision,
-            controlID: "next-slide"
+            controllerID: document.id,
+            revision: document.revision,
+            controlID: "next-slide",
+            event: .triggered,
+            sequence: 1,
+            timestamp: Date(timeIntervalSince1970: 1_700_000_000),
+            value: .none
         )
 
-        for message in [WireMessage.schemaSnapshot(snapshot), .controlEvent(event)] {
+        for message in [WireMessage.schemaSnapshot(document), .controlEvent(event)] {
             let encoded = try WireCodec.encoder.encode(message)
             XCTAssertEqual(try WireCodec.decoder.decode(WireMessage.self, from: encoded), message)
         }
-        XCTAssertTrue(snapshot.accepts(event))
-        XCTAssertFalse(snapshot.accepts(ControlEvent(
-            controllerID: snapshot.controllerID,
-            revision: snapshot.revision + 1,
-            controlID: "next-slide"
-        )))
-        XCTAssertFalse(snapshot.accepts(ControlEvent(
-            controllerID: snapshot.controllerID,
-            revision: snapshot.revision,
-            controlID: "unknown"
-        )))
+        XCTAssertNoThrow(try SchemaValidator.validate(document))
+        XCTAssertEqual(
+            try SchemaValidator.binding(for: event, in: document),
+            document.bindings[0]
+        )
     }
 
     func testExpiredQRCodeIsRejected() throws {
