@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class OverlayPanelController {
     private let contextMonitor: AppContextMonitor
+    private let pairingHost = PairingSessionHost()
     private var panel: OverlayPanel?
     private var outsideClickMonitor: Any?
     private var localEventMonitor: Any?
@@ -59,7 +60,7 @@ final class OverlayPanelController {
 
     private func makePanel(context: AppContext?, errorMessage: String?) -> OverlayPanel {
         let panel = OverlayPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 680, height: 540),
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 650),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -73,6 +74,7 @@ final class OverlayPanelController {
         panel.contentView = NSHostingView(rootView: MacOverlayView(
             context: context,
             errorMessage: errorMessage,
+            pairingHost: pairingHost,
             onClose: { [weak self] in self?.close() },
             onRequestPermission: { MacActionExecutor.requestNextPermission() },
             onNextSlide: { [weak self] in

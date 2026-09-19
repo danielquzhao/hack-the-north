@@ -11,3 +11,19 @@ To show window titles and use the local Keynote action, grant Universal Controll
 For command-line builds, use `xcodebuild -project UniversalController.xcodeproj -scheme UniversalControllerMac -configuration Debug -derivedDataPath DerivedData build`. Keep code signing enabled so the bundle identifier is included in the app signature. Quit and reopen the app after rebuilding; it does not reload Swift changes while running. This project currently uses ad hoc signing, so macOS may ask for Accessibility access again after a rebuild. An Apple Development signing certificate can make that permission more stable.
 
 Sending Right Arrow with Core Graphics also requires macOS keyboard event (`PostEvent`) access. If **Request Keyboard Access** shows no system prompt, `tccutil reset PostEvent dev.universalcontroller.mac` clears the remembered decision for this app. Relaunch the app and request access again. Set up Apple Development signing before further rebuilds to avoid invalidating grants with each code change.
+
+## Pair an iPhone
+
+Run `UniversalControllerMac`, open the menu-bar overlay, and click **Pair iPhone**. The Mac advertises a temporary Bonjour service and displays a QR code that expires after five minutes.
+
+On a physical iPhone:
+
+1. Run the `UniversalControllerPhone` scheme.
+2. Tap **Scan Mac QR**.
+3. Allow Camera and Local Network access.
+4. Scan the QR displayed by the Mac.
+5. Keep both apps open until both devices show **Connected**.
+
+The phone authenticates with the one-time secret in the QR and automatically sends a ping. A round-trip time on the phone and **Bidirectional connection verified** on the Mac confirm that messages work in both directions.
+
+QR scanning requires a physical iPhone. The simulator can build and display the pairing screen, but VisionKit does not provide camera scanning there. Both devices should be on the same Wi-Fi network; the Network framework configuration also opts into Apple peer-to-peer networking.

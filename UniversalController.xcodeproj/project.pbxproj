@@ -8,12 +8,20 @@
 
 /* Begin PBXBuildFile section */
 		A10000000000000000000001 /* UniversalControllerMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* UniversalControllerMacApp.swift */; };
+		A10000000000000000000002 /* UniversalControllerPhoneApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* UniversalControllerPhoneApp.swift */; };
+		A10000000000000000000003 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* ContentView.swift */; };
 		A10000000000000000000004 /* AppContextMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* AppContextMonitor.swift */; };
 		A10000000000000000000005 /* OverlayPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* OverlayPanelController.swift */; };
 		A10000000000000000000006 /* MacOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* MacOverlayView.swift */; };
 		A10000000000000000000007 /* MacActionExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* MacActionExecutor.swift */; };
-		A10000000000000000000002 /* UniversalControllerPhoneApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* UniversalControllerPhoneApp.swift */; };
-		A10000000000000000000003 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* ContentView.swift */; };
+		A10000000000000000000008 /* PairingProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* PairingProtocol.swift */; };
+		A10000000000000000000009 /* FramedConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* FramedConnection.swift */; };
+		A1000000000000000000000A /* PairingProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* PairingProtocol.swift */; };
+		A1000000000000000000000B /* FramedConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* FramedConnection.swift */; };
+		A1000000000000000000000C /* PairingSessionHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* PairingSessionHost.swift */; };
+		A1000000000000000000000D /* PairingQRCodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* PairingQRCodeView.swift */; };
+		A1000000000000000000000E /* PairingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* PairingClient.swift */; };
+		A1000000000000000000000F /* QRCodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* QRCodeScannerView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +34,14 @@
 		B10000000000000000000007 /* OverlayPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayPanelController.swift; sourceTree = "<group>"; };
 		B10000000000000000000008 /* MacOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOverlayView.swift; sourceTree = "<group>"; };
 		B10000000000000000000009 /* MacActionExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacActionExecutor.swift; sourceTree = "<group>"; };
+		B10000000000000000000010 /* PairingProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingProtocol.swift; sourceTree = "<group>"; };
+		B10000000000000000000011 /* FramedConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FramedConnection.swift; sourceTree = "<group>"; };
+		B10000000000000000000012 /* PairingSessionHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingSessionHost.swift; sourceTree = "<group>"; };
+		B10000000000000000000013 /* PairingQRCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingQRCodeView.swift; sourceTree = "<group>"; };
+		B10000000000000000000014 /* PairingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingClient.swift; sourceTree = "<group>"; };
+		B10000000000000000000015 /* QRCodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCodeScannerView.swift; sourceTree = "<group>"; };
+		B10000000000000000000016 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B10000000000000000000017 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -50,6 +66,7 @@
 			isa = PBXGroup;
 			children = (
 				C10000000000000000000002 /* Apps */,
+				C10000000000000000000006 /* Shared */,
 				C10000000000000000000005 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -71,6 +88,9 @@
 				B10000000000000000000007 /* OverlayPanelController.swift */,
 				B10000000000000000000008 /* MacOverlayView.swift */,
 				B10000000000000000000009 /* MacActionExecutor.swift */,
+				B10000000000000000000012 /* PairingSessionHost.swift */,
+				B10000000000000000000013 /* PairingQRCodeView.swift */,
+				B10000000000000000000016 /* Info.plist */,
 			);
 			path = UniversalControllerMac;
 			sourceTree = "<group>";
@@ -80,6 +100,9 @@
 			children = (
 				B10000000000000000000003 /* ContentView.swift */,
 				B10000000000000000000002 /* UniversalControllerPhoneApp.swift */,
+				B10000000000000000000014 /* PairingClient.swift */,
+				B10000000000000000000015 /* QRCodeScannerView.swift */,
+				B10000000000000000000017 /* Info.plist */,
 			);
 			path = UniversalControllerPhone;
 			sourceTree = "<group>";
@@ -91,6 +114,15 @@
 				B10000000000000000000005 /* UniversalControllerPhone.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		C10000000000000000000006 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000010 /* PairingProtocol.swift */,
+				B10000000000000000000011 /* FramedConnection.swift */,
+			);
+			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -194,6 +226,10 @@
 				A10000000000000000000005 /* OverlayPanelController.swift in Sources */,
 				A10000000000000000000006 /* MacOverlayView.swift in Sources */,
 				A10000000000000000000007 /* MacActionExecutor.swift in Sources */,
+				A10000000000000000000008 /* PairingProtocol.swift in Sources */,
+				A10000000000000000000009 /* FramedConnection.swift in Sources */,
+				A1000000000000000000000C /* PairingSessionHost.swift in Sources */,
+				A1000000000000000000000D /* PairingQRCodeView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -203,6 +239,10 @@
 			files = (
 				A10000000000000000000003 /* ContentView.swift in Sources */,
 				A10000000000000000000002 /* UniversalControllerPhoneApp.swift in Sources */,
+				A1000000000000000000000A /* PairingProtocol.swift in Sources */,
+				A1000000000000000000000B /* FramedConnection.swift in Sources */,
+				A1000000000000000000000E /* PairingClient.swift in Sources */,
+				A1000000000000000000000F /* QRCodeScannerView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -255,6 +295,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Apps/UniversalControllerMac/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Universal Controller";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -284,6 +325,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Apps/UniversalControllerMac/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Universal Controller";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -309,11 +351,13 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5BA4B43Y74;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Apps/UniversalControllerPhone/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Universal Controller";
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -338,11 +382,13 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5BA4B43Y74;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Apps/UniversalControllerPhone/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Universal Controller";
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
