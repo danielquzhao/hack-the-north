@@ -4,16 +4,16 @@ Universal Controller is a controller system for Mac and iPhone. The Mac understa
 
 ## Product flow
 
-1. The user opens an app such as Keynote or Google Slides.
+1. The user navigates to an app such as Keynote or Google Slides.
 2. They click the Universal Controller tile in the Mac menu bar.
-3. Universal Controller captures the previous app and window title, then opens a centered, Spotlight-style overlay.
-4. The user describes the controller they need.
-5. AI selects built-in controls, lays them out, and maps them to allowed Mac actions.
-6. The user previews and manually adjusts the layout, labels, styles, and mappings.
+3. A centered, Spotlight-style overlay opens. Universal Controller remembers the app and window the user was using.
+4. The user describes the controller they want.
+5. AI creates a JSON controller using Universal Controller's built-in buttons, sliders, joysticks, trackpads, and motion controls.
+6. The user previews and manually adjusts the layout, labels, sizes, styles, and action mappings.
 7. The Mac displays a pairing QR code.
 8. The iPhone scans it, connects locally, and renders the controller.
-9. Phone input travels directly to the Mac and triggers keyboard, mouse, scroll, or Accessibility actions.
-10. The controller can be saved and reused as a preset.
+9. Phone inputs travel directly to the Mac and trigger deterministic keyboard, mouse, scroll, or Accessibility actions.
+10. Controllers can be saved and reused as presets.
 
 AI is used only to design the controller. It is never part of the real-time input path.
 
