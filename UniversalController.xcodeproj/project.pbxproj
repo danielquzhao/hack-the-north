@@ -11,6 +11,7 @@
 		A10000000000000000000004 /* AppContextMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* AppContextMonitor.swift */; };
 		A10000000000000000000005 /* OverlayPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* OverlayPanelController.swift */; };
 		A10000000000000000000006 /* MacOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* MacOverlayView.swift */; };
+		A10000000000000000000007 /* MacActionExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* MacActionExecutor.swift */; };
 		A10000000000000000000002 /* UniversalControllerPhoneApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* UniversalControllerPhoneApp.swift */; };
 		A10000000000000000000003 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* ContentView.swift */; };
 /* End PBXBuildFile section */
@@ -24,6 +25,7 @@
 		B10000000000000000000006 /* AppContextMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContextMonitor.swift; sourceTree = "<group>"; };
 		B10000000000000000000007 /* OverlayPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayPanelController.swift; sourceTree = "<group>"; };
 		B10000000000000000000008 /* MacOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOverlayView.swift; sourceTree = "<group>"; };
+		B10000000000000000000009 /* MacActionExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacActionExecutor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -68,6 +70,7 @@
 				B10000000000000000000006 /* AppContextMonitor.swift */,
 				B10000000000000000000007 /* OverlayPanelController.swift */,
 				B10000000000000000000008 /* MacOverlayView.swift */,
+				B10000000000000000000009 /* MacActionExecutor.swift */,
 			);
 			path = UniversalControllerMac;
 			sourceTree = "<group>";
@@ -190,6 +193,7 @@
 				A10000000000000000000004 /* AppContextMonitor.swift in Sources */,
 				A10000000000000000000005 /* OverlayPanelController.swift in Sources */,
 				A10000000000000000000006 /* MacOverlayView.swift in Sources */,
+				A10000000000000000000007 /* MacActionExecutor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -3,13 +3,17 @@ import SwiftUI
 
 struct MacOverlayView: View {
     let context: AppContext?
+    let errorMessage: String?
     let onClose: () -> Void
+    let onRequestPermission: () -> Void
+    let onNextSlide: () -> Void
 
     @State private var prompt = ""
+    @State private var permissionStatus = MacActionExecutor.permissionStatus
     @FocusState private var promptIsFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Universal Controller")
@@ -58,6 +62,21 @@ struct MacOverlayView: View {
                 .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
             }
 
+            HStack(spacing: 12) {
+                Image(systemName: permissionStatus.canControl ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .foregroundStyle(permissionStatus.canControl ? .green : .orange)
+                Text(permissionStatus.canControl ? "Accessibility and keyboard control ready"
+                    : permissionStatus.accessibility ? "Keyboard control access required" : "Accessibility access required")
+                    .font(.subheadline)
+                Spacer()
+                if !permissionStatus.canControl {
+                    Button(permissionStatus.accessibility ? "Allow Keyboard Control" : "Grant Accessibility") {
+                        onRequestPermission()
+                        permissionStatus = MacActionExecutor.permissionStatus
+                    }
+                }
+            }
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("YOUR CONTROLLER")
                     .font(.caption.weight(.semibold))
@@ -69,6 +88,28 @@ struct MacOverlayView: View {
                     .padding(14)
                     .background(.background, in: RoundedRectangle(cornerRadius: 12))
                     .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary))
+            }
+
+            HStack {
+                if context?.application.bundleIdentifier == "com.apple.iWork.Keynote" {
+                    Button("Next Slide") { onNextSlide() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!permissionStatus.canControl)
+                    Text("Sends Right Arrow to Keynote")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Open Keynote to try the local Next Slide action")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
             }
 
             Spacer(minLength: 0)
@@ -83,9 +124,15 @@ struct MacOverlayView: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .padding(28)
-        .frame(width: 680, height: 430)
+        .padding(24)
+        .frame(width: 680, height: 540)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
         .onAppear { promptIsFocused = true }
+        .task {
+            while !Task.isCancelled {
+                permissionStatus = MacActionExecutor.permissionStatus
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
     }
 }

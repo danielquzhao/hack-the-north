@@ -22,7 +22,11 @@ final class OverlayPanelController {
 
     private func open() {
         let context = contextMonitor.capture()
-        let panel = makePanel(context: context)
+        open(context: context, errorMessage: nil)
+    }
+
+    private func open(context: AppContext?, errorMessage: String?) {
+        let panel = makePanel(context: context, errorMessage: errorMessage)
         self.panel = panel
         center(panel)
         panel.makeKeyAndOrderFront(nil)
@@ -53,9 +57,9 @@ final class OverlayPanelController {
         panel = nil
     }
 
-    private func makePanel(context: AppContext?) -> OverlayPanel {
+    private func makePanel(context: AppContext?, errorMessage: String?) -> OverlayPanel {
         let panel = OverlayPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 680, height: 430),
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 540),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -66,10 +70,28 @@ final class OverlayPanelController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.contentView = NSHostingView(rootView: MacOverlayView(context: context) { [weak self] in
-            self?.close()
-        })
+        panel.contentView = NSHostingView(rootView: MacOverlayView(
+            context: context,
+            errorMessage: errorMessage,
+            onClose: { [weak self] in self?.close() },
+            onRequestPermission: { MacActionExecutor.requestNextPermission() },
+            onNextSlide: { [weak self] in
+                Task { @MainActor [weak self] in
+                    await self?.sendNextSlide(context: context)
+                }
+            }
+        ))
         return panel
+    }
+
+    private func sendNextSlide(context: AppContext?) async {
+        guard let context else { return }
+        close()
+        do {
+            try await MacActionExecutor.sendNextSlide(to: context.application)
+        } catch {
+            open(context: context, errorMessage: error.localizedDescription)
+        }
     }
 
     private func center(_ panel: NSPanel) {
