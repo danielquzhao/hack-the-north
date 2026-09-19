@@ -3,6 +3,7 @@ DerivedData/
 *.xcuserstate
 xcuserdata/
 LocalSigning.xcconfig
+UniversalController.xcodeproj/
 
 # Swift Package Manager
 .build/

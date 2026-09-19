@@ -442,18 +442,23 @@ private extension MacOverlayView {
 
     func replaceDraft(
         name: String? = nil,
+        preferredOrientation: ControllerOrientation? = nil,
         layout: ControllerLayout? = nil,
         controls: [ControlDefinition]? = nil,
         bindings: [ControlBinding]? = nil
     ) {
         guard let draft else { return }
+        let layouts = layout.map {
+            draft.layouts.replacing($0, for: draft.preferredOrientation)
+        } ?? draft.layouts
         self.draft = ControllerDocument(
             schemaVersion: draft.schemaVersion,
             id: draft.id,
             revision: draft.revision,
             name: name ?? draft.name,
             target: draft.target,
-            layout: layout ?? draft.layout,
+            preferredOrientation: preferredOrientation ?? draft.preferredOrientation,
+            layouts: layouts,
             controls: controls ?? draft.controls,
             bindings: bindings ?? draft.bindings
         )
@@ -472,9 +477,32 @@ private extension MacOverlayView {
             }
 
             if let draft {
+                HStack {
+                    Label("Phone orientation", systemImage: draft.preferredOrientation == .portrait
+                        ? "iphone"
+                        : "iphone.landscape")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Picker("Phone orientation", selection: Binding(
+                        get: { draft.preferredOrientation },
+                        set: { replaceDraft(preferredOrientation: $0) }
+                    )) {
+                        ForEach(ControllerOrientation.allCases, id: \.self) { orientation in
+                            Text(orientation.displayName).tag(orientation)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 220)
+                }
+
                 HStack(alignment: .top, spacing: 16) {
                     controllerPreview(draft)
-                        .frame(width: 260, height: 360)
+                        .frame(
+                            width: draft.preferredOrientation == .portrait ? 260 : 360,
+                            height: draft.preferredOrientation == .portrait ? 360 : 240
+                        )
                     inspector(draft)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                 }

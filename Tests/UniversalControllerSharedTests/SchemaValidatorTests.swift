@@ -74,6 +74,12 @@ final class SchemaValidatorTests: XCTestCase {
         XCTAssertThrowsError(try SchemaValidator.validate(document))
     }
 
+    func testLandscapeLayoutMustReferenceEveryControl() {
+        let document = makeDocument(landscapeItems: [])
+
+        XCTAssertThrowsError(try SchemaValidator.validate(document))
+    }
+
     func testStaleControlEventIsRejected() throws {
         let document = makeDocument()
         let event = ControlEvent(
@@ -185,6 +191,7 @@ final class SchemaValidatorTests: XCTestCase {
         items: [ControllerLayoutItem] = [
             ControllerLayoutItem(controlID: "next", columnSpan: 1, rowSpan: 1),
         ],
+        landscapeItems: [ControllerLayoutItem]? = nil,
         bindings: [ControlBinding]? = nil
     ) -> ControllerDocument {
         ControllerDocument(
@@ -196,7 +203,11 @@ final class SchemaValidatorTests: XCTestCase {
                 bundleIdentifier: "com.example.target",
                 displayName: "Target"
             ),
-            layout: ControllerLayout(columns: 1, items: items),
+            preferredOrientation: .portrait,
+            layouts: ControllerLayouts(
+                portrait: ControllerLayout(columns: 1, items: items),
+                landscape: ControllerLayout(columns: 1, items: landscapeItems ?? items)
+            ),
             controls: controls,
             bindings: bindings ?? [ControlBinding(
                 id: "next-binding",

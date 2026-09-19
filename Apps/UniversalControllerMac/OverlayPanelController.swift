@@ -11,6 +11,7 @@ final class OverlayPanelController {
     private var generationID: UUID?
     private var generationTargetBundleID: String?
     private var panel: OverlayPanel?
+    private var lastPanelOrigin: NSPoint?
     private var outsideClickMonitor: Any?
     private var localEventMonitor: Any?
 
@@ -42,7 +43,11 @@ final class OverlayPanelController {
         }
         let panel = makePanel(context: context, errorMessage: errorMessage)
         self.panel = panel
-        center(panel)
+        if let lastPanelOrigin {
+            panel.setFrameOrigin(lastPanelOrigin)
+        } else {
+            center(panel)
+        }
         panel.makeKeyAndOrderFront(nil)
 
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
@@ -59,6 +64,9 @@ final class OverlayPanelController {
     }
 
     func close() {
+        if let panel {
+            lastPanelOrigin = panel.frame.origin
+        }
         if let outsideClickMonitor {
             NSEvent.removeMonitor(outsideClickMonitor)
             self.outsideClickMonitor = nil
@@ -80,6 +88,8 @@ final class OverlayPanelController {
         )
         panel.level = .floating
         panel.isFloatingPanel = true
+        panel.isMovable = true
+        panel.isMovableByWindowBackground = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -259,13 +269,24 @@ final class OverlayPanelController {
                 revision: 1,
                 name: "Keynote Presenter",
                 target: target,
-                layout: ControllerLayout(
+            preferredOrientation: .portrait,
+            layouts: ControllerLayouts(
+                portrait: ControllerLayout(
                     columns: 1,
                     items: [ControllerLayoutItem(
                         controlID: "next-slide",
                         columnSpan: 1,
                         rowSpan: 1
                     )]
+                ),
+                landscape: ControllerLayout(
+                    columns: 2,
+                    items: [ControllerLayoutItem(
+                        controlID: "next-slide",
+                        columnSpan: 2,
+                        rowSpan: 1
+                    )]
+                )
                 ),
                 controls: [
                     .button(id: "next-slide", label: "Next Slide"),
@@ -296,8 +317,14 @@ final class OverlayPanelController {
         ]
         var controls = [ControlDefinition.joystick(id: "stick", label: "Pointer")]
         controls += buttons.map { .button(id: $0.id, label: $0.label, face: $0.face) }
-        var items = [ControllerLayoutItem(controlID: "stick", columnSpan: 2, rowSpan: 2)]
-        items += buttons.map { ControllerLayoutItem(controlID: $0.id, columnSpan: 1, rowSpan: 1) }
+        var portraitItems = [ControllerLayoutItem(controlID: "stick", columnSpan: 2, rowSpan: 2)]
+        portraitItems += buttons.map {
+            ControllerLayoutItem(controlID: $0.id, columnSpan: 1, rowSpan: 1)
+        }
+        var landscapeItems = [ControllerLayoutItem(controlID: "stick", columnSpan: 2, rowSpan: 2)]
+        landscapeItems += buttons.map {
+            ControllerLayoutItem(controlID: $0.id, columnSpan: 1, rowSpan: 1)
+        }
         var bindings = [ControlBinding(
             id: "stick-move",
             controlID: "stick",
@@ -315,7 +342,12 @@ final class OverlayPanelController {
 
         if includeTilt {
             controls.append(.tilt(id: "tilt", label: "Tilt Pointer"))
-            items.append(ControllerLayoutItem(controlID: "tilt", columnSpan: 2, rowSpan: 1))
+            portraitItems.append(
+                ControllerLayoutItem(controlID: "tilt", columnSpan: 2, rowSpan: 1)
+            )
+            landscapeItems.append(
+                ControllerLayoutItem(controlID: "tilt", columnSpan: 2, rowSpan: 1)
+            )
             bindings.append(ControlBinding(
                 id: "tilt-move",
                 controlID: "tilt",
@@ -330,7 +362,11 @@ final class OverlayPanelController {
             revision: 1,
             name: "Keynote Gamepad",
             target: target,
-            layout: ControllerLayout(columns: 2, items: items),
+            preferredOrientation: .portrait,
+            layouts: ControllerLayouts(
+                portrait: ControllerLayout(columns: 2, items: portraitItems),
+                landscape: ControllerLayout(columns: 4, items: landscapeItems)
+            ),
             controls: controls,
             bindings: bindings
         )

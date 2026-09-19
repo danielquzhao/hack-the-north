@@ -80,13 +80,24 @@ final class PairingProtocolTests: XCTestCase {
                 bundleIdentifier: "com.apple.iWork.Keynote",
                 displayName: "Keynote"
             ),
-            layout: ControllerLayout(
-                columns: 1,
-                items: [ControllerLayoutItem(
-                    controlID: "next-slide",
-                    columnSpan: 1,
-                    rowSpan: 1
-                )]
+            preferredOrientation: .portrait,
+            layouts: ControllerLayouts(
+                portrait: ControllerLayout(
+                    columns: 1,
+                    items: [ControllerLayoutItem(
+                        controlID: "next-slide",
+                        columnSpan: 1,
+                        rowSpan: 1
+                    )]
+                ),
+                landscape: ControllerLayout(
+                    columns: 2,
+                    items: [ControllerLayoutItem(
+                        controlID: "next-slide",
+                        columnSpan: 2,
+                        rowSpan: 1
+                    )]
+                )
             ),
             controls: [.button(id: "next-slide", label: "Next Slide")],
             bindings: [ControlBinding(

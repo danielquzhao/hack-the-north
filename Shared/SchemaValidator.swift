@@ -88,10 +88,6 @@ enum SchemaValidator {
         guard document.bindings.count <= maximumBindings else {
             throw error("Controller cannot contain more than \(maximumBindings) bindings.")
         }
-        guard (1...maximumColumns).contains(document.layout.columns) else {
-            throw error("Layout column count must be between 1 and \(maximumColumns).")
-        }
-
         let controlIDs = document.controls.map(\.id)
         guard Set(controlIDs).count == controlIDs.count else {
             throw error("Control IDs must be unique.")
@@ -112,22 +108,16 @@ enum SchemaValidator {
             throw error("Only one motion control is supported per controller.")
         }
 
-        let layoutIDs = document.layout.items.map(\.controlID)
-        guard Set(layoutIDs).count == layoutIDs.count else {
-            throw error("Each control may appear only once in the layout.")
-        }
-        guard Set(layoutIDs) == Set(controlIDs) else {
-            throw error("Layout must contain every controller control exactly once.")
-        }
-
-        for item in document.layout.items {
-            guard (1...document.layout.columns).contains(item.columnSpan) else {
-                throw error("Control '\(item.controlID)' has an invalid column span.")
-            }
-            guard (1...maximumSpan).contains(item.rowSpan) else {
-                throw error("Control '\(item.controlID)' has an invalid row span.")
-            }
-        }
+        try validateLayout(
+            document.layouts.portrait,
+            orientation: .portrait,
+            controlIDs: controlIDs
+        )
+        try validateLayout(
+            document.layouts.landscape,
+            orientation: .landscape,
+            controlIDs: controlIDs
+        )
 
         let bindingIDs = document.bindings.map(\.id)
         guard Set(bindingIDs).count == bindingIDs.count else {
@@ -157,7 +147,10 @@ enum SchemaValidator {
 
             let eventKey = "\(binding.controlID):\(binding.event.rawValue)"
             guard boundEvents.insert(eventKey).inserted else {
-                throw error("A control event may have only one binding in schema version 1.")
+                throw error(
+                    "A control event may have only one binding in schema version " +
+                    "\(ControllerDocument.currentSchemaVersion)."
+                )
             }
 
             if case .keyChord(let action) = binding.action,
@@ -168,6 +161,41 @@ enum SchemaValidator {
                (!action.gain.isFinite || !(1...40).contains(action.gain) ||
                 !action.deadZone.isFinite || !(0...0.5).contains(action.deadZone)) {
                 throw error("Mouse movement gain or dead zone is out of range.")
+            }
+        }
+    }
+
+    private static func validateLayout(
+        _ layout: ControllerLayout,
+        orientation: ControllerOrientation,
+        controlIDs: [String]
+    ) throws {
+        guard (1...maximumColumns).contains(layout.columns) else {
+            throw error(
+                "\(orientation.displayName) layout column count must be between 1 and \(maximumColumns)."
+            )
+        }
+
+        let layoutIDs = layout.items.map(\.controlID)
+        guard Set(layoutIDs).count == layoutIDs.count else {
+            throw error("Each control may appear only once in the \(orientation.rawValue) layout.")
+        }
+        guard Set(layoutIDs) == Set(controlIDs) else {
+            throw error(
+                "\(orientation.displayName) layout must contain every controller control exactly once."
+            )
+        }
+
+        for item in layout.items {
+            guard (1...layout.columns).contains(item.columnSpan) else {
+                throw error(
+                    "Control '\(item.controlID)' has an invalid \(orientation.rawValue) column span."
+                )
+            }
+            guard (1...maximumSpan).contains(item.rowSpan) else {
+                throw error(
+                    "Control '\(item.controlID)' has an invalid \(orientation.rawValue) row span."
+                )
             }
         }
     }

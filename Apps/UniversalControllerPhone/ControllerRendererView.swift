@@ -8,32 +8,57 @@ struct ControllerRendererView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let spacing: CGFloat = 12
-            let heightUnits = rows.reduce(0) { $0 + $1.heightUnits }
-            let availableHeight = max(
-                0,
-                geometry.size.height - CGFloat(max(rows.count - 1, 0)) * spacing
-            )
-            let contentHeight = max(availableHeight, CGFloat(heightUnits) * 112)
+            if orientationMatches(geometry.size) {
+                let spacing: CGFloat = 12
+                let heightUnits = rows.reduce(0) { $0 + $1.heightUnits }
+                let availableHeight = max(
+                    0,
+                    geometry.size.height - CGFloat(max(rows.count - 1, 0)) * spacing
+                )
+                let contentHeight = max(availableHeight, CGFloat(heightUnits) * 112)
 
-            ScrollView {
-                Grid(horizontalSpacing: spacing, verticalSpacing: spacing) {
-                    ForEach(rows) { row in
-                        GridRow {
-                            ForEach(row.items) { item in
-                                if let control = document.control(id: item.controlID) {
-                                    controlView(control)
-                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                        .gridCellColumns(item.columnSpan)
+                ScrollView {
+                    Grid(horizontalSpacing: spacing, verticalSpacing: spacing) {
+                        ForEach(rows) { row in
+                            GridRow {
+                                ForEach(row.items) { item in
+                                    if let control = document.control(id: item.controlID) {
+                                        controlView(control)
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                            .gridCellColumns(item.columnSpan)
+                                    }
                                 }
                             }
+                            .frame(height: contentHeight * CGFloat(row.heightUnits) / CGFloat(max(heightUnits, 1)))
                         }
-                        .frame(height: contentHeight * CGFloat(row.heightUnits) / CGFloat(max(heightUnits, 1)))
                     }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
+                .scrollIndicators(.hidden)
+            } else {
+                VStack(spacing: 14) {
+                    Image(systemName: document.preferredOrientation == .landscape
+                        ? "iphone.landscape"
+                        : "iphone")
+                        .font(.system(size: 46, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                    Text("Rotate to \(document.preferredOrientation.displayName)")
+                        .font(.title3.bold())
+                    Text("This controller was designed for \(document.preferredOrientation.rawValue).")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .scrollIndicators(.hidden)
+        }
+    }
+
+    private func orientationMatches(_ size: CGSize) -> Bool {
+        switch document.preferredOrientation {
+        case .portrait:
+            size.height >= size.width
+        case .landscape:
+            size.width > size.height
         }
     }
 

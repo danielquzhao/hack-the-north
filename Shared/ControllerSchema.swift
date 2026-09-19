@@ -1,16 +1,25 @@
 import Foundation
 
 struct ControllerDocument: Codable, Equatable, Sendable, Identifiable {
-    static let currentSchemaVersion = 1
+    static let currentSchemaVersion = 2
 
     let schemaVersion: Int
     let id: UUID
     let revision: Int
     let name: String
     let target: ControllerTarget
-    let layout: ControllerLayout
+    let preferredOrientation: ControllerOrientation
+    let layouts: ControllerLayouts
     let controls: [ControlDefinition]
     let bindings: [ControlBinding]
+
+    var layout: ControllerLayout {
+        layouts.layout(for: preferredOrientation)
+    }
+
+    func layout(for orientation: ControllerOrientation) -> ControllerLayout {
+        layouts.layout(for: orientation)
+    }
 
     func control(id: String) -> ControlDefinition? {
         controls.first { $0.id == id }
@@ -24,6 +33,41 @@ struct ControllerDocument: Codable, Equatable, Sendable, Identifiable {
 struct ControllerTarget: Codable, Equatable, Sendable {
     let bundleIdentifier: String
     let displayName: String
+}
+
+enum ControllerOrientation: String, Codable, CaseIterable, Equatable, Sendable {
+    case portrait
+    case landscape
+
+    var displayName: String {
+        rawValue.capitalized
+    }
+}
+
+struct ControllerLayouts: Codable, Equatable, Sendable {
+    let portrait: ControllerLayout
+    let landscape: ControllerLayout
+
+    func layout(for orientation: ControllerOrientation) -> ControllerLayout {
+        switch orientation {
+        case .portrait:
+            portrait
+        case .landscape:
+            landscape
+        }
+    }
+
+    func replacing(
+        _ layout: ControllerLayout,
+        for orientation: ControllerOrientation
+    ) -> ControllerLayouts {
+        switch orientation {
+        case .portrait:
+            ControllerLayouts(portrait: layout, landscape: landscape)
+        case .landscape:
+            ControllerLayouts(portrait: portrait, landscape: layout)
+        }
+    }
 }
 
 struct ControllerLayout: Codable, Equatable, Sendable {
