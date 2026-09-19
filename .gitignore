@@ -2,6 +2,7 @@
 DerivedData/
 *.xcuserstate
 xcuserdata/
+LocalSigning.xcconfig
 
 # Swift Package Manager
 .build/
