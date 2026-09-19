@@ -14,6 +14,12 @@ final class ControllerEditorState: ObservableObject {
     @Published var includeTilt = false
     @Published var draft: ControllerDocument?
     @Published var selectedControlID: String?
+    @Published var prompt = ""
+    @Published var hasAPIKey = OpenAIAPIKeyStore.load() != nil
+    @Published var isGenerating = false
+    @Published var generationStatus: String?
+    @Published var generationError: String?
+    @Published var draftWasGenerated = false
 }
 
 struct MacOverlayView: View {
@@ -24,11 +30,16 @@ struct MacOverlayView: View {
     let onClose: () -> Void
     let onRequestPermission: () -> Void
     let onMakeDraft: (DemoControllerStyle, Bool) -> ControllerDocument?
+    let onGenerate: (String) -> Void
+    let onSaveAPIKey: (String) -> String?
+    let onRemoveAPIKey: () -> Void
     let onStartPairing: (ControllerDocument) -> Void
     let onNextSlide: () -> Void
 
     @State private var permissionStatus = MacActionExecutor.permissionStatus
     @State private var showKeyboardHelp = false
+    @State private var apiKeyEntry = ""
+    @State private var apiKeyError: String?
 
     private var demoStyle: DemoControllerStyle {
         get { editorState.demoStyle }
@@ -139,11 +150,17 @@ struct MacOverlayView: View {
                     Spacer()
                 }
 
+                generationSection
+
                 if let context, MacActionExecutor.isKeynote(context.application) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("STARTING LAYOUT")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
+                        if editorState.draftWasGenerated {
+                            Button("Use Demo Layout Instead") { makeDraft() }
+                                .disabled(!canEditDraft)
+                        }
                         HStack(spacing: 16) {
                             Picker("Demo layout", selection: Binding(
                                 get: { demoStyle }, set: { demoStyle = $0 }
@@ -175,7 +192,9 @@ struct MacOverlayView: View {
                 }
 
                 HStack {
-                    Text("Edit the demo controller before pairing. AI generation comes next.")
+                    Text(editorState.draftWasGenerated
+                        ? "AI draft ready for review. Pair when the controls look right."
+                        : "Edit a demo controller or generate one from a request.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -223,7 +242,7 @@ struct MacOverlayView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(draftValidationError != nil)
+                    .disabled(draftValidationError != nil || editorState.isGenerating)
                 }
                 .padding(14)
                 .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
@@ -304,7 +323,7 @@ struct MacOverlayView: View {
                             onStartPairing(draft)
                         }
                     }
-                    .disabled(draftValidationError != nil)
+                    .disabled(draftValidationError != nil || editorState.isGenerating)
                 }
                 .padding(14)
                 .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
@@ -314,8 +333,90 @@ struct MacOverlayView: View {
 }
 
 private extension MacOverlayView {
+    var generationSection: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("YOUR CONTROLLER")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            TextField(
+                "For example: Next, Previous, and Blackout buttons",
+                text: $editorState.prompt,
+                axis: .vertical
+            )
+            .textFieldStyle(.plain)
+            .lineLimit(2...4)
+            .padding(12)
+            .background(.background, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary))
+            .disabled(!canEditDraft)
+
+            if editorState.hasAPIKey {
+                HStack {
+                    Label("OpenAI API key saved in Keychain", systemImage: "key.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Remove Key") {
+                        onRemoveAPIKey()
+                        apiKeyEntry = ""
+                    }
+                    .font(.caption)
+                }
+            } else {
+                HStack {
+                    SecureField("OpenAI API key", text: $apiKeyEntry)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Save Key") {
+                        apiKeyError = onSaveAPIKey(apiKeyEntry)
+                        if apiKeyError == nil { apiKeyEntry = "" }
+                    }
+                    .disabled(apiKeyEntry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                HStack {
+                    Text("Your key stays in macOS Keychain and is used only for generation requests.")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Link("Create an API key", destination: URL(string: "https://platform.openai.com/api-keys")!)
+                }
+                .font(.caption)
+            }
+
+            HStack {
+                Button {
+                    onGenerate(editorState.prompt)
+                } label: {
+                    if editorState.isGenerating {
+                        Label(editorState.generationStatus ?? "Generating…", systemImage: "sparkles")
+                    } else {
+                        Label("Generate Controller", systemImage: "sparkles")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(
+                    !canEditDraft || !editorState.hasAPIKey ||
+                    editorState.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    context?.application.bundleIdentifier == nil
+                )
+                if editorState.isGenerating { ProgressView().controlSize(.small) }
+                Spacer()
+            }
+
+            Text("Generation captures the selected app window and sends its image, your request, and app details to OpenAI. It never captures the whole screen.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if let message = apiKeyError ?? editorState.generationError {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
     var canEditDraft: Bool {
-        switch pairingHost.state {
+        guard !editorState.isGenerating else { return false }
+        return switch pairingHost.state {
         case .idle, .failed: true
         case .starting, .waiting, .authenticating, .connected: false
         }
@@ -335,6 +436,8 @@ private extension MacOverlayView {
         guard canEditDraft else { return }
         draft = onMakeDraft(demoStyle, includeTilt)
         selectedControlID = draft?.layout.items.first?.controlID
+        editorState.draftWasGenerated = false
+        editorState.generationError = nil
     }
 
     func replaceDraft(
@@ -376,6 +479,25 @@ private extension MacOverlayView {
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .disabled(!canEditDraft)
+
+                Text("ACTION MAPPINGS")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                VStack(spacing: 6) {
+                    ForEach(draft.controls) { control in
+                        HStack {
+                            Text(control.label)
+                                .lineLimit(1)
+                            Spacer()
+                            Text(actionSummary(for: control, in: draft))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        .font(.caption)
+                    }
+                }
+                .padding(12)
+                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
             }
 
             if let draftValidationError {
@@ -707,6 +829,19 @@ private extension MacOverlayView {
             return MouseMoveAction(gain: 10, deadZone: 0.1)
         }
         return action
+    }
+
+    func actionSummary(for control: ControlDefinition, in draft: ControllerDocument) -> String {
+        guard let binding = draft.bindings.first(where: { $0.controlID == control.id }) else {
+            return "No action"
+        }
+        switch binding.action {
+        case .keyChord(let action):
+            let parts = action.modifiers.map { $0.rawValue.capitalized } + [action.key.rawValue]
+            return parts.joined(separator: " + ")
+        case .mouseMove(let action):
+            return "Move pointer · gain \(Int(action.gain))"
+        }
     }
 }
 

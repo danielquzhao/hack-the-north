@@ -6,6 +6,10 @@ final class OverlayPanelController {
     private let contextMonitor: AppContextMonitor
     private let pairingHost = PairingSessionHost()
     private let editorState = ControllerEditorState()
+    private let generator: ControllerGenerating = OpenAIControllerGenerator()
+    private var generationTask: Task<Void, Never>?
+    private var generationID: UUID?
+    private var generationTargetBundleID: String?
     private var panel: OverlayPanel?
     private var outsideClickMonitor: Any?
     private var localEventMonitor: Any?
@@ -28,6 +32,14 @@ final class OverlayPanelController {
     }
 
     private func open(context: AppContext?, errorMessage: String?) {
+        if editorState.isGenerating,
+           generationTargetBundleID != context?.application.bundleIdentifier {
+            generationTask?.cancel()
+            generationTask = nil
+            generationID = nil
+            editorState.isGenerating = false
+            editorState.generationStatus = nil
+        }
         let panel = makePanel(context: context, errorMessage: errorMessage)
         self.panel = panel
         center(panel)
@@ -82,6 +94,15 @@ final class OverlayPanelController {
             onMakeDraft: { [weak self] style, includeTilt in
                 self?.makeController(context: context, style: style, includeTilt: includeTilt)
             },
+            onGenerate: { [weak self] request in
+                self?.startGeneration(request: request, context: context)
+            },
+            onSaveAPIKey: { [weak self] key in
+                self?.saveAPIKey(key)
+            },
+            onRemoveAPIKey: { [weak self] in
+                self?.removeAPIKey()
+            },
             onStartPairing: { [weak self] controller in
                 self?.startPairing(context: context, controller: controller)
             },
@@ -117,6 +138,10 @@ final class OverlayPanelController {
     }
 
     private func startPairing(context: AppContext?, controller: ControllerDocument) {
+        guard !editorState.isGenerating,
+              context?.application.bundleIdentifier == controller.target.bundleIdentifier else {
+            return
+        }
         pairingHost.startSession(controller: controller)
         if let application = context?.application,
            let router = try? ControllerActionRouter(
@@ -127,6 +152,98 @@ final class OverlayPanelController {
                 Task { @MainActor [weak self] in
                     await self?.route(event, using: router, context: context)
                 }
+            }
+        }
+    }
+
+    private func saveAPIKey(_ key: String) -> String? {
+        do {
+            try OpenAIAPIKeyStore.save(key)
+            editorState.hasAPIKey = true
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    private func removeAPIKey() {
+        OpenAIAPIKeyStore.remove()
+        editorState.hasAPIKey = false
+    }
+
+    private func startGeneration(request: String, context: AppContext?) {
+        guard !editorState.isGenerating,
+              let application = context?.application,
+              let bundleIdentifier = application.bundleIdentifier else { return }
+        let generationContext = ControllerGenerationContext(
+            bundleIdentifier: bundleIdentifier,
+            appName: context?.displayName ?? application.localizedName ?? "Mac app",
+            windowTitle: context?.windowTitle
+        )
+        editorState.isGenerating = true
+        editorState.generationStatus = "Capturing window…"
+        editorState.generationError = nil
+        generationTargetBundleID = bundleIdentifier
+        let generationID = UUID()
+        self.generationID = generationID
+        generationTask = Task { @MainActor [weak self] in
+            await self?.generate(
+                request: request,
+                context: generationContext,
+                application: application,
+                windowTitle: context?.windowTitle,
+                windowFrame: context?.windowFrame,
+                id: generationID
+            )
+        }
+    }
+
+    private func generate(
+        request: String,
+        context: ControllerGenerationContext,
+        application: NSRunningApplication,
+        windowTitle: String?,
+        windowFrame: CGRect?,
+        id: UUID
+    ) async {
+        defer {
+            if generationID == id {
+                editorState.isGenerating = false
+                editorState.generationStatus = nil
+                generationTask = nil
+                generationID = nil
+                generationTargetBundleID = nil
+            }
+        }
+        do {
+            guard let apiKey = OpenAIAPIKeyStore.load() else {
+                throw ControllerGenerationError.missingKey
+            }
+            let screenshotJPEG = try await TargetWindowScreenshot.captureJPEG(
+                of: application,
+                title: windowTitle,
+                frame: windowFrame
+            )
+            try Task.checkCancellation()
+            guard generationID == id else { return }
+            editorState.generationStatus = "Generating…"
+            let document = try await generator.generate(
+                request: request,
+                context: context,
+                screenshotJPEG: screenshotJPEG,
+                apiKey: apiKey
+            )
+            try Task.checkCancellation()
+            guard generationID == id else { return }
+            editorState.draft = document
+            editorState.selectedControlID = document.layout.items.first?.controlID
+            editorState.draftWasGenerated = true
+            editorState.generationError = nil
+        } catch is CancellationError {
+            return
+        } catch {
+            if generationID == id {
+                editorState.generationError = error.localizedDescription
             }
         }
     }

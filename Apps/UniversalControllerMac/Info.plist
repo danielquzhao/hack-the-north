@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Capture the app window you selected so AI can design a controller for what is visible.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_universalctrl._tcp</string>

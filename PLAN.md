@@ -8,7 +8,7 @@ Universal Controller is a controller system for Mac and iPhone. The Mac understa
 2. They click the Universal Controller tile in the Mac menu bar.
 3. A centered, Spotlight-style overlay opens. Universal Controller remembers the app and window the user was using.
 4. The user describes the controller they want.
-5. AI creates a JSON controller using Universal Controller's built-in buttons, sliders, joysticks, trackpads, and motion controls.
+5. With Screen Recording permission, the Mac captures the selected app window. AI uses that screenshot and the user's description to create a JSON controller from Universal Controller's built-in controls.
 6. The user previews and manually adjusts the layout, labels, sizes, styles, and action mappings.
 7. The Mac displays a pairing QR code.
 8. The iPhone scans it, connects locally, and renders the controller.
@@ -69,6 +69,8 @@ Clicking the menu-bar tile toggles a centered, Spotlight-style overlay containin
 - Connection and permission status
 
 `AppContextMonitor` observes app activation, ignores Universal Controller itself, and remembers the last external frontmost app and focused-window title before opening the overlay. The overlay closes with Escape, an outside click, or another menu-bar click.
+
+On a generation request, ScreenCaptureKit captures only the selected app window and sends its resized image with the prompt to the model. Generation stops if Screen Recording access or a clear window match is unavailable. The screenshot is not saved to disk or sent to the phone.
 
 For Google Slides, the executable target is Safari or Chrome while the browser window title supplies the Slides context. The MVP will not require a browser extension or inspect private browser state. When the overlay closes, or before the first keyboard action, Universal Controller reactivates the captured app so shortcuts reach the intended target.
 

@@ -4,6 +4,7 @@ import ApplicationServices
 struct AppContext {
     let application: NSRunningApplication
     let windowTitle: String?
+    let windowFrame: CGRect?
     let canReadWindowTitle: Bool
 
     var displayName: String {
@@ -37,9 +38,11 @@ final class AppContextMonitor {
         }
         guard let application = lastExternalApplication else { return nil }
         let canReadWindowTitle = AXIsProcessTrusted()
+        let focusedWindow = canReadWindowTitle ? focusedWindow(for: application) : nil
         return AppContext(
             application: application,
-            windowTitle: canReadWindowTitle ? focusedWindowTitle(for: application) : nil,
+            windowTitle: focusedWindow.flatMap(windowTitle),
+            windowFrame: focusedWindow.flatMap(windowFrame),
             canReadWindowTitle: canReadWindowTitle
         )
     }
@@ -50,18 +53,38 @@ final class AppContextMonitor {
         lastExternalApplication = application
     }
 
-    private func focusedWindowTitle(for application: NSRunningApplication) -> String? {
+    private func focusedWindow(for application: NSRunningApplication) -> AXUIElement? {
         let appElement = AXUIElementCreateApplication(application.processIdentifier)
         var windowValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &windowValue) == .success,
               let windowValue,
               CFGetTypeID(windowValue) == AXUIElementGetTypeID() else { return nil }
 
-        let windowElement = unsafeDowncast(windowValue, to: AXUIElement.self)
+        return unsafeDowncast(windowValue, to: AXUIElement.self)
+    }
+
+    private func windowTitle(of window: AXUIElement) -> String? {
         var titleValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(windowElement, kAXTitleAttribute as CFString, &titleValue) == .success,
+        guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleValue) == .success,
               let title = titleValue as? String,
               !title.isEmpty else { return nil }
         return title
+    }
+
+    private func windowFrame(of window: AXUIElement) -> CGRect? {
+        var positionValue: CFTypeRef?
+        var sizeValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &positionValue) == .success,
+              AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeValue) == .success,
+              let positionValue, let sizeValue,
+              CFGetTypeID(positionValue) == AXValueGetTypeID(),
+              CFGetTypeID(sizeValue) == AXValueGetTypeID() else { return nil }
+        var position = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(unsafeDowncast(positionValue, to: AXValue.self), .cgPoint, &position),
+              AXValueGetValue(unsafeDowncast(sizeValue, to: AXValue.self), .cgSize, &size) else {
+            return nil
+        }
+        return CGRect(origin: position, size: size)
     }
 }
