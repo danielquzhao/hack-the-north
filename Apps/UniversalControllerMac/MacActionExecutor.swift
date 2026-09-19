@@ -19,7 +19,7 @@ enum MacActionError: LocalizedError {
         case .accessibilityRequired:
             "Allow Universal Controller in Accessibility settings, then try again."
         case .keyboardControlRequired:
-            "Allow Universal Controller to send keyboard events, then try again."
+            "Keyboard event access is still unavailable. No key was sent."
         case .activationFailed:
             "Couldn't bring Keynote to the front. No key was sent."
         case .eventUnavailable:
@@ -37,6 +37,11 @@ struct MacPermissionStatus {
 
 @MainActor
 enum MacActionExecutor {
+    static func isKeynote(_ application: NSRunningApplication) -> Bool {
+        guard let bundleIdentifier = application.bundleIdentifier else { return false }
+        return bundleIdentifier == "com.apple.Keynote" || bundleIdentifier == "com.apple.iWork.Keynote"
+    }
+
     static var permissionStatus: MacPermissionStatus {
         MacPermissionStatus(
             accessibility: AXIsProcessTrusted(),
@@ -54,7 +59,7 @@ enum MacActionExecutor {
     }
 
     static func sendNextSlide(to application: NSRunningApplication) async throws {
-        guard application.bundleIdentifier == "com.apple.iWork.Keynote" else {
+        guard isKeynote(application) else {
             throw MacActionError.wrongTarget
         }
         guard !application.isTerminated else {

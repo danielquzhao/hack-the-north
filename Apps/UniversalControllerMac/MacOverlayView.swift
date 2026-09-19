@@ -10,6 +10,7 @@ struct MacOverlayView: View {
 
     @State private var prompt = ""
     @State private var permissionStatus = MacActionExecutor.permissionStatus
+    @State private var showKeyboardHelp = false
     @FocusState private var promptIsFocused: Bool
 
     var body: some View {
@@ -66,15 +67,22 @@ struct MacOverlayView: View {
                 Image(systemName: permissionStatus.canControl ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                     .foregroundStyle(permissionStatus.canControl ? .green : .orange)
                 Text(permissionStatus.canControl ? "Accessibility and keyboard control ready"
-                    : permissionStatus.accessibility ? "Keyboard control access required" : "Accessibility access required")
+                    : permissionStatus.accessibility ? "Keyboard event access required" : "Accessibility access required")
                     .font(.subheadline)
                 Spacer()
                 if !permissionStatus.canControl {
-                    Button(permissionStatus.accessibility ? "Allow Keyboard Control" : "Grant Accessibility") {
+                    Button(permissionStatus.accessibility ? "Request Keyboard Access" : "Grant Accessibility") {
                         onRequestPermission()
                         permissionStatus = MacActionExecutor.permissionStatus
+                        showKeyboardHelp = permissionStatus.accessibility && !permissionStatus.keyboardControl
                     }
                 }
+            }
+
+            if showKeyboardHelp {
+                Text("If macOS shows no prompt, its keyboard event permission may need a reset. See README for the command.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -91,7 +99,7 @@ struct MacOverlayView: View {
             }
 
             HStack {
-                if context?.application.bundleIdentifier == "com.apple.iWork.Keynote" {
+                if let context, MacActionExecutor.isKeynote(context.application) {
                     Button("Next Slide") { onNextSlide() }
                         .buttonStyle(.borderedProminent)
                         .disabled(!permissionStatus.canControl)
@@ -131,6 +139,7 @@ struct MacOverlayView: View {
         .task {
             while !Task.isCancelled {
                 permissionStatus = MacActionExecutor.permissionStatus
+                if permissionStatus.canControl { showKeyboardHelp = false }
                 try? await Task.sleep(for: .seconds(1))
             }
         }
