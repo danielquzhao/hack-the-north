@@ -5,6 +5,7 @@ import SwiftUI
 final class OverlayPanelController {
     private let contextMonitor: AppContextMonitor
     private let pairingHost = PairingSessionHost()
+    private let editorState = ControllerEditorState()
     private var panel: OverlayPanel?
     private var outsideClickMonitor: Any?
     private var localEventMonitor: Any?
@@ -60,7 +61,7 @@ final class OverlayPanelController {
 
     private func makePanel(context: AppContext?, errorMessage: String?) -> OverlayPanel {
         let panel = OverlayPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 700, height: 650),
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 730),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -75,10 +76,14 @@ final class OverlayPanelController {
             context: context,
             errorMessage: errorMessage,
             pairingHost: pairingHost,
+            editorState: editorState,
             onClose: { [weak self] in self?.close() },
             onRequestPermission: { MacActionExecutor.requestNextPermission() },
-            onStartPairing: { [weak self] style, includeTilt in
-                self?.startPairing(context: context, style: style, includeTilt: includeTilt)
+            onMakeDraft: { [weak self] style, includeTilt in
+                self?.makeController(context: context, style: style, includeTilt: includeTilt)
+            },
+            onStartPairing: { [weak self] controller in
+                self?.startPairing(context: context, controller: controller)
             },
             onNextSlide: { [weak self] in
                 Task { @MainActor [weak self] in
@@ -89,31 +94,31 @@ final class OverlayPanelController {
         return panel
     }
 
-    private func startPairing(
+    private func makeController(
         context: AppContext?,
         style: DemoControllerStyle,
         includeTilt: Bool
-    ) {
-        let controller: ControllerDocument?
-        if let application = context?.application,
-           MacActionExecutor.isKeynote(application),
-           let bundleID = application.bundleIdentifier {
-            let target = ControllerTarget(
-                bundleIdentifier: bundleID,
-                displayName: context?.displayName ?? "Keynote"
-            )
-            switch style {
-            case .presenter:
-                controller = makePresenterController(target: target)
-            case .gamepad:
-                controller = makeGamepadController(target: target, includeTilt: includeTilt)
-            }
-        } else {
-            controller = nil
+    ) -> ControllerDocument? {
+        guard let application = context?.application,
+              MacActionExecutor.isKeynote(application),
+              let bundleID = application.bundleIdentifier else {
+            return nil
         }
+        let target = ControllerTarget(
+            bundleIdentifier: bundleID,
+            displayName: context?.displayName ?? "Keynote"
+        )
+        switch style {
+        case .presenter:
+            return makePresenterController(target: target)
+        case .gamepad:
+            return makeGamepadController(target: target, includeTilt: includeTilt)
+        }
+    }
 
+    private func startPairing(context: AppContext?, controller: ControllerDocument) {
         pairingHost.startSession(controller: controller)
-        if let controller, let application = context?.application,
+        if let application = context?.application,
            let router = try? ControllerActionRouter(
                document: controller,
                application: application

@@ -14,7 +14,7 @@ Sending Right Arrow with Core Graphics also requires macOS keyboard event (`Post
 
 ## Pair an iPhone
 
-Open Keynote, run `UniversalControllerMac`, open the menu-bar overlay, and click **Pair iPhone**. The Mac advertises a temporary Bonjour service and displays a QR code that expires after five minutes. Pairing from Keynote sends a validated `ControllerDocument` containing a responsive layout and deterministic action bindings.
+Open Keynote, run `UniversalControllerMac`, and open the menu-bar overlay. Choose a demo layout, then use the Mac preview to select controls, reorder them, change their width and height, edit labels and button styles, and adjust keyboard or pointer mappings. Click **Pair iPhone** when the draft is ready. The Mac validates that draft, advertises a temporary Bonjour service, and displays a QR code that expires after five minutes. The phone receives the edited `ControllerDocument` after pairing. Draft edits persist if you close and reopen the overlay while using the same target app.
 
 Choose **Presenter** for the original Next Slide button. Choose **Gamepad** to preview a thumbstick and A/B/X/Y button faces. The sample maps A to next slide, B to previous slide, X to black screen, Y to advance, and the thumbstick to pointer movement. **Phone tilt moves pointer** adds an optional motion control. The phone reads motion only while that control is visible; tap its card to recenter. This is a built-in demo layout; the prompt field does not generate layouts yet.
 
