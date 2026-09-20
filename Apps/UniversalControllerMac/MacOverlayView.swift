@@ -1,14 +1,6 @@
 import AppKit
 import SwiftUI
 
-enum DemoControllerStyle: String, CaseIterable, Identifiable {
-    case presenter = "Presenter"
-    case gamepad = "Gamepad"
-    case gestures = "Gestures"
-
-    var id: Self { self }
-}
-
 private enum EditorToolTab: String, CaseIterable, Identifiable {
     case controls = "Controls"
     case assets = "Assets"
@@ -27,8 +19,6 @@ private enum EditorToolTab: String, CaseIterable, Identifiable {
 
 @MainActor
 final class ControllerEditorState: ObservableObject {
-    @Published var demoStyle: DemoControllerStyle = .presenter
-    @Published var includeTilt = false
     @Published var draft: ControllerDocument?
     @Published var selectedControlID: String?
     @Published var prompt = ""
@@ -36,7 +26,6 @@ final class ControllerEditorState: ObservableObject {
     @Published var isGenerating = false
     @Published var generationStatus: String?
     @Published var generationError: String?
-    @Published var draftWasGenerated = false
     @Published var isIterativePrompt = false
 }
 
@@ -47,7 +36,6 @@ struct MacOverlayView: View {
     @ObservedObject var editorState: ControllerEditorState
     let onClose: () -> Void
     let onRequestPermission: () -> Void
-    let onMakeDraft: (DemoControllerStyle, Bool) -> ControllerDocument?
     let onGenerate: (String) -> Void
     let onSaveAPIKey: (String) -> String?
     let onRemoveAPIKey: () -> Void
@@ -61,16 +49,6 @@ struct MacOverlayView: View {
     @State private var apiKeyError: String?
     @State private var showingSettings = true
     @State private var selectedToolTab: EditorToolTab = .controls
-
-    private var demoStyle: DemoControllerStyle {
-        get { editorState.demoStyle }
-        nonmutating set { editorState.demoStyle = newValue }
-    }
-
-    private var includeTilt: Bool {
-        get { editorState.includeTilt }
-        nonmutating set { editorState.includeTilt = newValue }
-    }
 
     private var draft: ControllerDocument? {
         get { editorState.draft }
@@ -460,10 +438,6 @@ struct MacOverlayView: View {
                             Text("\(controller.name) is ready on your iPhone")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                        } else {
-                            Text("Pair from Keynote to send the demo button")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
                     }
                     Spacer()
@@ -527,22 +501,6 @@ private extension MacOverlayView {
                 .disabled(!canGenerate)
             }
 
-            HStack(spacing: 10) {
-                Picker("Demo layout", selection: $editorState.demoStyle) {
-                    ForEach(DemoControllerStyle.allCases) { style in
-                        Text(style.rawValue).tag(style)
-                    }
-                }
-                Button("Use Demo") { makeDraft() }
-                    .disabled(!canEditDraft || context.map {
-                        MacActionExecutor.isKeynote($0.application)
-                    } != true)
-            }
-            if demoStyle == .gamepad {
-                Toggle("Phone tilt moves pointer", isOn: $editorState.includeTilt)
-                    .disabled(!canEditDraft)
-            }
-
             if let message = editorState.generationError {
                 Text(message)
                     .font(.caption)
@@ -585,15 +543,6 @@ private extension MacOverlayView {
         } catch {
             return error.localizedDescription
         }
-    }
-
-    func makeDraft() {
-        guard canEditDraft else { return }
-        draft = onMakeDraft(demoStyle, includeTilt)
-        selectedControlID = draft?.layout.items.first?.controlID
-        editorState.draftWasGenerated = false
-        editorState.isIterativePrompt = false
-        editorState.generationError = nil
     }
 
     func replaceDraft(

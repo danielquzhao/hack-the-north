@@ -37,7 +37,6 @@ final class OverlayPanelController {
         if editorState.draft?.target.bundleIdentifier != context?.application.bundleIdentifier {
             editorState.draft = nil
             editorState.selectedControlID = nil
-            editorState.draftWasGenerated = false
             editorState.isIterativePrompt = false
         }
         if editorState.isGenerating,
@@ -109,9 +108,6 @@ final class OverlayPanelController {
             editorState: editorState,
             onClose: { [weak self] in self?.close() },
             onRequestPermission: { MacActionExecutor.requestNextPermission() },
-            onMakeDraft: { [weak self] style, includeTilt in
-                self?.makeController(context: context, style: style, includeTilt: includeTilt)
-            },
             onGenerate: { [weak self] request in
                 self?.startGeneration(request: request, context: context)
             },
@@ -173,30 +169,6 @@ final class OverlayPanelController {
                     self?.lastPanelOrigin = panel.frame.origin
                 }
             }
-        }
-    }
-
-    private func makeController(
-        context: AppContext?,
-        style: DemoControllerStyle,
-        includeTilt: Bool
-    ) -> ControllerDocument? {
-        guard let application = context?.application,
-              MacActionExecutor.isKeynote(application),
-              let bundleID = application.bundleIdentifier else {
-            return nil
-        }
-        let target = ControllerTarget(
-            bundleIdentifier: bundleID,
-            displayName: context?.displayName ?? "Keynote"
-        )
-        switch style {
-        case .presenter:
-            return makePresenterController(target: target)
-        case .gamepad:
-            return makeGamepadController(target: target, includeTilt: includeTilt)
-        case .gestures:
-            return makeGestureController(target: target)
         }
     }
 
@@ -308,7 +280,6 @@ final class OverlayPanelController {
             guard generationID == id else { return }
             editorState.draft = document
             editorState.selectedControlID = document.layout.items.first?.controlID
-            editorState.draftWasGenerated = true
             editorState.isIterativePrompt = true
             editorState.generationError = nil
             editorState.prompt = ""
@@ -319,211 +290,6 @@ final class OverlayPanelController {
                 editorState.generationError = error.localizedDescription
             }
         }
-    }
-
-    private func makePresenterController(target: ControllerTarget) -> ControllerDocument {
-        ControllerDocument(
-                schemaVersion: ControllerDocument.currentSchemaVersion,
-                id: UUID(),
-                revision: 1,
-                name: "Keynote Presenter",
-                target: target,
-            preferredOrientation: .landscape,
-            layouts: ControllerLayouts(
-                portrait: ControllerLayout(
-                    columns: 1,
-                    items: [ControllerLayoutItem(
-                        controlID: "next-slide",
-                        columnSpan: 1,
-                        rowSpan: 1
-                    ), ControllerLayoutItem(
-                        controlID: "swipe-slides",
-                        columnSpan: 1,
-                        rowSpan: 2
-                    )]
-                ),
-                landscape: ControllerLayout(
-                    columns: 2,
-                    items: [ControllerLayoutItem(
-                        controlID: "next-slide",
-                        columnSpan: 2,
-                        rowSpan: 1
-                    ), ControllerLayoutItem(
-                        controlID: "swipe-slides",
-                        columnSpan: 2,
-                        rowSpan: 2
-                    )]
-                )
-                ),
-                controls: [
-                    .button(id: "next-slide", label: "Next Slide"),
-                    .swipePad(id: "swipe-slides", label: "Swipe Slides"),
-                ],
-                bindings: [
-                    ControlBinding(
-                        id: "next-slide-binding",
-                        controlID: "next-slide",
-                        event: .triggered,
-                        action: .keyChord(KeyChordAction(
-                            key: .rightArrow,
-                            modifiers: []
-                        ))
-                    ),
-                    ControlBinding(
-                        id: "swipe-left",
-                        controlID: "swipe-slides",
-                        event: .swipedLeft,
-                        action: .keyChord(KeyChordAction(key: .rightArrow, modifiers: []))
-                    ),
-                    ControlBinding(
-                        id: "swipe-right",
-                        controlID: "swipe-slides",
-                        event: .swipedRight,
-                        action: .keyChord(KeyChordAction(key: .leftArrow, modifiers: []))
-                    ),
-                    ControlBinding(
-                        id: "swipe-up",
-                        controlID: "swipe-slides",
-                        event: .swipedUp,
-                        action: .keyChord(KeyChordAction(key: .rightArrow, modifiers: []))
-                    ),
-                    ControlBinding(
-                        id: "swipe-down",
-                        controlID: "swipe-slides",
-                        event: .swipedDown,
-                        action: .keyChord(KeyChordAction(key: .leftArrow, modifiers: []))
-                    ),
-                ]
-            )
-    }
-
-    private func makeGamepadController(
-        target: ControllerTarget,
-        includeTilt: Bool
-    ) -> ControllerDocument {
-        let buttons: [(id: String, label: String, face: ButtonFace, key: SemanticKey)] = [
-            ("x", "Blackout", .x, .letterB),
-            ("y", "Advance", .y, .space),
-            ("a", "Next", .a, .rightArrow),
-            ("b", "Previous", .b, .leftArrow),
-        ]
-        var controls = [ControlDefinition.joystick(id: "stick", label: "Pointer")]
-        controls += buttons.map { .button(id: $0.id, label: $0.label, face: $0.face) }
-        var portraitItems = [ControllerLayoutItem(controlID: "stick", columnSpan: 2, rowSpan: 2)]
-        portraitItems += buttons.map {
-            ControllerLayoutItem(controlID: $0.id, columnSpan: 1, rowSpan: 1)
-        }
-        var landscapeItems = [ControllerLayoutItem(controlID: "stick", columnSpan: 2, rowSpan: 2)]
-        landscapeItems += buttons.map {
-            ControllerLayoutItem(controlID: $0.id, columnSpan: 1, rowSpan: 1)
-        }
-        var bindings = [ControlBinding(
-            id: "stick-move",
-            controlID: "stick",
-            event: .changed,
-            action: .mouseMove(MouseMoveAction(gain: 14, deadZone: 0.1))
-        )]
-        bindings += buttons.map {
-            ControlBinding(
-                id: "\($0.id)-press",
-                controlID: $0.id,
-                event: .triggered,
-                action: .keyChord(KeyChordAction(key: $0.key, modifiers: []))
-            )
-        }
-
-        if includeTilt {
-            controls.append(.tilt(id: "tilt", label: "Tilt Pointer"))
-            portraitItems.append(
-                ControllerLayoutItem(controlID: "tilt", columnSpan: 2, rowSpan: 1)
-            )
-            landscapeItems.append(
-                ControllerLayoutItem(controlID: "tilt", columnSpan: 2, rowSpan: 1)
-            )
-            bindings.append(ControlBinding(
-                id: "tilt-move",
-                controlID: "tilt",
-                event: .changed,
-                action: .mouseMove(MouseMoveAction(gain: 9, deadZone: 0.18))
-            ))
-        }
-
-        return ControllerDocument(
-            schemaVersion: ControllerDocument.currentSchemaVersion,
-            id: UUID(),
-            revision: 1,
-            name: "Keynote Gamepad",
-            target: target,
-            preferredOrientation: .landscape,
-            layouts: ControllerLayouts(
-                portrait: ControllerLayout(columns: 2, items: portraitItems),
-                landscape: ControllerLayout(columns: 4, items: landscapeItems)
-            ),
-            controls: controls,
-            bindings: bindings
-        )
-    }
-
-    private func makeGestureController(target: ControllerTarget) -> ControllerDocument {
-        let controls: [ControlDefinition] = [
-            .swipePad(id: "swipe", label: "Swipe Slides"),
-            .pinchPad(id: "pinch", label: "Pinch Slides"),
-            .rotationPad(id: "rotate", label: "Rotate Slides"),
-        ]
-        let swipeKeys: [(SwipeDirection, SemanticKey)] = [
-            (.left, .rightArrow), (.right, .leftArrow),
-            (.up, .rightArrow), (.down, .leftArrow),
-        ]
-        let pinchKeys: [(PinchDirection, SemanticKey)] = [
-            (.inward, .leftArrow), (.outward, .rightArrow),
-        ]
-        let rotationKeys: [(RotationDirection, SemanticKey)] = [
-            (.clockwise, .rightArrow), (.counterclockwise, .leftArrow),
-        ]
-        let bindings = swipeKeys.map { direction, key in
-            ControlBinding(
-                id: "swipe-\(direction.rawValue)",
-                controlID: "swipe",
-                event: direction.event,
-                action: .keyChord(KeyChordAction(key: key, modifiers: []))
-            )
-        } + pinchKeys.map { direction, key in
-            ControlBinding(
-                id: "pinch-\(direction.rawValue)",
-                controlID: "pinch",
-                event: direction.event,
-                action: .keyChord(KeyChordAction(key: key, modifiers: []))
-            )
-        } + rotationKeys.map { direction, key in
-            ControlBinding(
-                id: "rotate-\(direction.rawValue)",
-                controlID: "rotate",
-                event: direction.event,
-                action: .keyChord(KeyChordAction(key: key, modifiers: []))
-            )
-        }
-        return ControllerDocument(
-            schemaVersion: ControllerDocument.currentSchemaVersion,
-            id: UUID(),
-            revision: 1,
-            name: "Keynote Gestures",
-            target: target,
-            preferredOrientation: .landscape,
-            layouts: ControllerLayouts(
-                portrait: ControllerLayout(columns: 2, items: [
-                    ControllerLayoutItem(controlID: "swipe", columnSpan: 2, rowSpan: 2),
-                    ControllerLayoutItem(controlID: "pinch", columnSpan: 1, rowSpan: 2),
-                    ControllerLayoutItem(controlID: "rotate", columnSpan: 1, rowSpan: 2),
-                ]),
-                landscape: ControllerLayout(columns: 3, items: [
-                    ControllerLayoutItem(controlID: "swipe", columnSpan: 1, rowSpan: 2),
-                    ControllerLayoutItem(controlID: "pinch", columnSpan: 1, rowSpan: 2),
-                    ControllerLayoutItem(controlID: "rotate", columnSpan: 1, rowSpan: 2),
-                ])
-            ),
-            controls: controls,
-            bindings: bindings
-        )
     }
 
     private func route(
