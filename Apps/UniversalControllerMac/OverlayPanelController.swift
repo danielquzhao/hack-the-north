@@ -93,7 +93,7 @@ final class OverlayPanelController {
     }
 
     private func makePanel(context: AppContext?, errorMessage: String?) -> OverlayPanel {
-        let initialWidth: CGFloat = editorState.draft == nil ? 430 : 1100
+        let initialWidth: CGFloat = editorState.draft == nil || editorState.isOnMainPage ? 430 : 1100
         let panel = OverlayPanel(
             contentRect: NSRect(x: 0, y: 0, width: initialWidth, height: 760),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -114,6 +114,7 @@ final class OverlayPanelController {
             pairingHost: pairingHost,
             editorState: editorState,
             onClose: { [weak self] in self?.close() },
+            onReturnToMain: { [weak self] in self?.returnToMainPage() },
             onRequestPermission: { MacActionExecutor.requestNextPermission() },
             onGenerate: { [weak self] request in
                 self?.startGeneration(request: request, context: context)
@@ -140,6 +141,18 @@ final class OverlayPanelController {
             }
         ))
         return panel
+    }
+
+    private func returnToMainPage() {
+        generationTask?.cancel()
+        generationTask = nil
+        generationID = nil
+        generationTargetBundleID = nil
+        pendingControlEvent?.cancel()
+        pendingControlEvent = nil
+        pairingHost.stopSession()
+        clearActionRouters()
+        editorState.resetToMainPage()
     }
 
     private func setWorkspaceExpanded(_ expanded: Bool) {

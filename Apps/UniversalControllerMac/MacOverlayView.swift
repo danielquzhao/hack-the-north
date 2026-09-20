@@ -33,6 +33,7 @@ final class ControllerEditorState: ObservableObject {
     @Published var assetDropTargeted = false
     /// How many phone seats to generate. 1 = solo, 2 = local co-op with distinct mappings.
     @Published var playerCount = 1
+    @Published var isOnMainPage = true
 
     var draft: ControllerDocument? {
         get { sessionPack?.controller(at: selectedSeatIndex) }
@@ -56,6 +57,7 @@ final class ControllerEditorState: ObservableObject {
 
     func loadGenerated(_ pack: ControllerSessionPack) {
         sessionPack = pack
+        isOnMainPage = false
         playerCount = min(2, max(1, pack.seatCount))
         selectedSeatIndex = 0
         selectedControlID = pack.primaryController.layout.items.first?.controlID
@@ -68,6 +70,22 @@ final class ControllerEditorState: ObservableObject {
     func loadGenerated(_ document: ControllerDocument) {
         loadGenerated(.single(document))
     }
+
+    func resetToMainPage() {
+        isOnMainPage = true
+        sessionPack = nil
+        selectedSeatIndex = 0
+        selectedControlID = nil
+        prompt = ""
+        isGenerating = false
+        generationStatus = nil
+        generationError = nil
+        isIterativePrompt = false
+        layoutDirty = false
+        capturingShortcutControlID = nil
+        assetDropTargeted = false
+        playerCount = 1
+    }
 }
 
 struct MacOverlayView: View {
@@ -76,6 +94,7 @@ struct MacOverlayView: View {
     @ObservedObject var pairingHost: PairingSessionHost
     @ObservedObject var editorState: ControllerEditorState
     let onClose: () -> Void
+    let onReturnToMain: () -> Void
     let onRequestPermission: () -> Void
     let onGenerate: (String) -> Void
     let onSaveAPIKey: (String) -> String?
@@ -90,7 +109,6 @@ struct MacOverlayView: View {
     @State private var apiKeyEntry = ""
     @State private var apiKeyError: String?
     @State private var showingSettings = true
-    @State private var showingWorkspace = true
     @State private var selectedToolTab: EditorToolTab = .controls
 
     private var draft: ControllerDocument? {
@@ -110,7 +128,7 @@ struct MacOverlayView: View {
     }
 
     private var isWorkspaceExpanded: Bool {
-        draft != nil && showingWorkspace
+        draft != nil && !editorState.isOnMainPage
     }
 
     var body: some View {
@@ -120,7 +138,10 @@ struct MacOverlayView: View {
                     if isWorkspaceExpanded {
                         Button {
                             withAnimation(.smooth(duration: 0.3)) {
-                                showingWorkspace = false
+                                onReturnToMain()
+                                showKeyboardHelp = false
+                                apiKeyEntry = ""
+                                apiKeyError = nil
                             }
                         } label: {
                             Label("Back to main page", systemImage: "chevron.left")
@@ -129,6 +150,7 @@ struct MacOverlayView: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
                         .accessibilityLabel("Back to main page")
+                        .help("Discard this controller and disconnect paired iPhones")
                     }
 
                     VStack(alignment: .leading, spacing: 5) {
@@ -195,17 +217,6 @@ struct MacOverlayView: View {
                                 if showingSettings {
                                     settingsContent
                                         .transition(.move(edge: .top).combined(with: .opacity))
-                                }
-
-                                if draft != nil {
-                                    Button {
-                                        withAnimation(.smooth(duration: 0.3)) {
-                                            showingWorkspace = true
-                                        }
-                                    } label: {
-                                        Label("Continue editing controller", systemImage: "slider.horizontal.3")
-                                    }
-                                    .buttonStyle(SolidGreyButtonStyle())
                                 }
 
                                 generationSection
@@ -570,21 +581,23 @@ private extension MacOverlayView {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            Picker("Players", selection: $editorState.playerCount) {
-                Text("1").tag(1)
-                Text("2").tag(2)
-            }
-            .pickerStyle(.segmented)
-            .disabled(!canEditDraft)
-            .accessibilityLabel("Players")
+            if !isWorkspaceExpanded {
+                Picker("Players", selection: $editorState.playerCount) {
+                    Text("1").tag(1)
+                    Text("2").tag(2)
+                }
+                .pickerStyle(.segmented)
+                .disabled(!canEditDraft)
+                .accessibilityLabel("Players")
 
-            Text(
-                editorState.playerCount == 2
-                    ? "Two phones share one layout. AI maps Player 1 and Player 2 to different keys."
-                    : "One phone controller for the Mac app."
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
+                Text(
+                    editorState.playerCount == 2
+                        ? "Two phones share one layout. AI maps Player 1 and Player 2 to different keys."
+                        : "One phone controller for the Mac app."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
 
             TextField(
                 generationPlaceholder,
@@ -646,7 +659,6 @@ private extension MacOverlayView {
 
     func submitGeneration() {
         guard canGenerate else { return }
-        showingWorkspace = true
         onGenerate(editorState.prompt)
     }
 
