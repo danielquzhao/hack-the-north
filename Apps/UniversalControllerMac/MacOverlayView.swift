@@ -854,7 +854,7 @@ private extension MacOverlayView {
                     controllerPreview(draft)
                         .frame(
                             width: draft.preferredOrientation == .portrait ? 320 : 600,
-                            height: draft.preferredOrientation == .portrait ? 430 : 350
+                            height: draft.preferredOrientation == .portrait ? 560 : 300
                         )
                         .disabled(!canEditLayout)
                 } else {
@@ -909,11 +909,6 @@ private extension MacOverlayView {
                         )
                         EditablePreviewControl(
                             control: control,
-                            title: previewTitle(for: control),
-                            subtitle: previewSubtitle(for: control),
-                            systemImage: ControllerCapabilityCatalog.current.control(
-                                id: control.kind.capabilityID
-                            )?.systemImage,
                             occupiesLayout: occupiesLayout,
                             frame: item.frame,
                             canvasSize: size,
@@ -930,7 +925,6 @@ private extension MacOverlayView {
                                 }
                                 : [],
                             isSelected: selectedControlID == control.id,
-                            color: previewColor(for: control),
                             onSelect: { selectedControlID = control.id },
                             onChangeFrame: { frame in
                                 updateFrame(control.id, frame)
@@ -969,17 +963,6 @@ private extension MacOverlayView {
         .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 22))
     }
 
-    func previewColor(for control: ControlDefinition) -> Color {
-        switch control.kind {
-        case .button(let configuration):
-            Color(hex: configuration.tintHex) ?? .indigo
-        case .dpad: .gray
-        case .joystick: .blue
-        case .motion: .teal
-        case .trackpad: .purple
-        }
-    }
-
     static func defaultTintHex(for face: ButtonFace, fallingBack: String) -> String {
         switch face {
         case .standard: fallingBack
@@ -988,23 +971,6 @@ private extension MacOverlayView {
         case .x: "007AFF"
         case .y: "FF9500"
         }
-    }
-
-    func previewTitle(for control: ControlDefinition) -> String {
-        if case .button(let configuration) = control.kind, configuration.face != .standard {
-            return configuration.face.rawValue.uppercased()
-        }
-        return control.label
-    }
-
-    func previewSubtitle(for control: ControlDefinition) -> String? {
-        if case .button(let configuration) = control.kind, configuration.face != .standard {
-            return control.label
-        }
-        if !ControllerCapabilityCatalog.current.occupiesLayout(control.kind.capabilityID) {
-            return control.label
-        }
-        return nil
     }
 
     func inspector(_ draft: ControllerDocument) -> some View {
@@ -1566,15 +1532,11 @@ private enum LayoutEditing {
 
 private struct EditablePreviewControl: View {
     let control: ControlDefinition
-    let title: String
-    let subtitle: String?
-    let systemImage: String?
     let occupiesLayout: Bool
     let frame: LayoutRect
     let canvasSize: CGSize
     let obstacles: [LayoutRect]
     let isSelected: Bool
-    let color: Color
     let onSelect: () -> Void
     let onChangeFrame: (LayoutRect) -> Void
 
@@ -1592,72 +1554,17 @@ private struct EditablePreviewControl: View {
 
     var body: some View {
         ZStack {
-            if occupiesLayout {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(color.opacity(isSelected ? 0.95 : 0.82))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(
-                                .white.opacity(isSelected ? 0.95 : 0.25),
-                                lineWidth: isSelected ? 2 : 1
-                            )
-                    }
-                    .shadow(color: .black.opacity(0.25), radius: isSelected ? 8 : 3, y: 2)
+            ControlArtwork(control: control)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
 
-                if case .dpad = control.kind {
-                    VStack(spacing: 3) {
-                        Image(systemName: "triangle.fill")
-                        HStack(spacing: 18) {
-                            Image(systemName: "triangle.fill").rotationEffect(.degrees(-90))
-                            Image(systemName: "triangle.fill").rotationEffect(.degrees(90))
-                        }
-                        Image(systemName: "triangle.fill").rotationEffect(.degrees(180))
-                        Text(title).font(.caption2.weight(.semibold)).lineLimit(1)
-                    }
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
+            if isSelected {
+                RoundedRectangle(cornerRadius: occupiesLayout ? 16 : 8)
+                    .strokeBorder(
+                        .white.opacity(0.5),
+                        style: StrokeStyle(lineWidth: 1, dash: [5, 4])
+                    )
                     .allowsHitTesting(false)
-                } else {
-                    VStack(spacing: 2) {
-                        Text(title)
-                            .font(subtitle == nil
-                                  ? .caption.weight(.semibold)
-                                  : .title3.weight(.heavy))
-                        if let subtitle {
-                            Text(subtitle)
-                                .font(.caption2.weight(.medium))
-                                .opacity(0.85)
-                                .lineLimit(1)
-                        }
-                    }
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-                    .padding(8)
-                    .minimumScaleFactor(0.55)
-                    .lineLimit(2)
-                    .allowsHitTesting(false)
-                }
-            } else {
-                VStack(spacing: 4) {
-                    if let systemImage {
-                        Image(systemName: systemImage)
-                            .font(.system(size: 18, weight: .semibold))
-                    }
-                    Text(subtitle ?? title)
-                        .font(.caption2.weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
-                .overlay {
-                    if isSelected {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(.white.opacity(0.85), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    }
-                }
-                .shadow(color: .black.opacity(0.55), radius: 2, y: 1)
             }
 
             if isSelected && occupiesLayout {

@@ -93,28 +93,6 @@ struct ControllerRendererView: View {
     }
 }
 
-private enum DPadDirection {
-    case up, down, left, right
-
-    var began: ControlEventKind {
-        switch self {
-        case .up: .upBegan
-        case .down: .downBegan
-        case .left: .leftBegan
-        case .right: .rightBegan
-        }
-    }
-
-    var ended: ControlEventKind {
-        switch self {
-        case .up: .upEnded
-        case .down: .downEnded
-        case .left: .leftEnded
-        case .right: .rightEnded
-        }
-    }
-}
-
 private struct DPadControlView: View {
     let label: String
     let hapticsEnabled: Bool
@@ -126,22 +104,7 @@ private struct DPadControlView: View {
         GeometryReader { geometry in
             let side = min(geometry.size.width, geometry.size.height * 0.82)
             VStack(spacing: 6) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: side * 0.18, style: .continuous)
-                        .fill(Color(white: 0.20))
-                    RoundedRectangle(cornerRadius: side * 0.18, style: .continuous)
-                        .strokeBorder(.white.opacity(0.25), lineWidth: 2)
-                    directionTriangle(.up, side: side)
-                        .position(x: side * 0.5, y: side * 0.21)
-                    directionTriangle(.down, side: side)
-                        .position(x: side * 0.5, y: side * 0.79)
-                    directionTriangle(.left, side: side)
-                        .position(x: side * 0.21, y: side * 0.5)
-                    directionTriangle(.right, side: side)
-                        .position(x: side * 0.79, y: side * 0.5)
-                    Circle().fill(Color(white: 0.12))
-                        .frame(width: side * 0.18, height: side * 0.18)
-                }
+                DPadFaceArtwork(side: side, activeDirection: activeDirection)
                 .frame(width: side, height: side)
                 .contentShape(RoundedRectangle(cornerRadius: side * 0.18))
                 .gesture(
@@ -163,19 +126,6 @@ private struct DPadControlView: View {
             if phase != .active { activate(nil) }
         }
         .accessibilityLabel("\(label), directional pad")
-    }
-
-    private func directionTriangle(_ direction: DPadDirection, side: CGFloat) -> some View {
-        let angle: Double = switch direction {
-        case .up: 0
-        case .down: 180
-        case .left: -90
-        case .right: 90
-        }
-        return Image(systemName: "triangle.fill")
-            .font(.system(size: side * 0.20, weight: .heavy))
-            .rotationEffect(.degrees(angle))
-            .foregroundStyle(activeDirection == direction ? .white : .white.opacity(0.65))
     }
 
     private func direction(at point: CGPoint, side: CGFloat) -> DPadDirection? {
@@ -206,13 +156,10 @@ private struct ButtonControlView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        Group {
-            if configuration.face == .standard {
-                standardButton
-            } else {
-                gamepadButton
-            }
+        Button {} label: {
+            ButtonArtwork(control: control, configuration: configuration)
         }
+        .buttonStyle(.plain)
         .simultaneousGesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in press() }
@@ -222,58 +169,7 @@ private struct ButtonControlView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { release() }
         }
-    }
-
-    private var standardButton: some View {
-        Button {} label: {
-            Text(control.label)
-                .font(.title2.bold())
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.vertical, 16)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(tintColor)
-                )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var gamepadButton: some View {
-        Button {} label: {
-            VStack(spacing: 7) {
-                Text(configuration.face.rawValue.uppercased())
-                    .font(.system(size: 29, weight: .heavy, design: .rounded))
-                    .foregroundStyle(.white)
-                    .frame(width: 72, height: 72)
-                    .background(
-                        Circle().fill(
-                            LinearGradient(
-                                colors: [faceColor.opacity(0.9), faceColor.opacity(0.55)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    )
-                    .overlay(Circle().strokeBorder(.white.opacity(0.35), lineWidth: 2))
-                    .shadow(color: faceColor.opacity(0.4), radius: 8, y: 4)
-                Text(control.label)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.8))
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.plain)
         .accessibilityLabel("\(configuration.face.rawValue.uppercased()), \(control.label)")
-    }
-
-    private var tintColor: Color {
-        Color(hex: configuration.tintHex) ?? .indigo
-    }
-
-    private var faceColor: Color {
-        tintColor
     }
 
     private func press() {
@@ -304,18 +200,7 @@ private struct TrackpadControlView: View {
     private let zero = Vector2Value(x: 0, y: 0)
 
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "hand.draw")
-                .font(.largeTitle)
-            Text(label)
-                .font(.subheadline.weight(.semibold))
-            Text("Drag to move · Pinch to zoom")
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.7))
-        }
-        .foregroundStyle(.white)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 16))
+        TrackpadArtwork(label: label)
         .contentShape(RoundedRectangle(cornerRadius: 16))
         .highPriorityGesture(
             DragGesture(minimumDistance: 3)
@@ -383,23 +268,7 @@ private struct JoystickControlView: View {
     @State private var isDragging = false
 
     var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(.black.opacity(0.35))
-                    .overlay(Circle().strokeBorder(.white.opacity(0.3), lineWidth: 2))
-                    .frame(width: 150, height: 150)
-                Circle()
-                    .fill(.linearGradient(
-                        colors: [.white.opacity(0.9), .gray.opacity(0.7)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ))
-                    .overlay(Circle().strokeBorder(.white.opacity(0.55), lineWidth: 2))
-                    .frame(width: 66, height: 66)
-                    .offset(offset)
-            }
-            .frame(width: 170, height: 170)
+        JoystickArtwork(label: label, offset: offset)
             .contentShape(Rectangle())
             .highPriorityGesture(DragGesture(minimumDistance: 0)
                 .onChanged { gesture in
@@ -423,11 +292,6 @@ private struct JoystickControlView: View {
                     offset = .zero
                     isDragging = false
                 })
-            Text(label)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.8))
-        }
-        .frame(maxWidth: .infinity)
         .accessibilityLabel("\(label) thumbstick")
     }
 }
@@ -440,19 +304,7 @@ private struct TiltControlView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        VStack(spacing: 4) {
-            Image(systemName: "gyroscope")
-                .font(.title3.weight(.semibold))
-            Text(label)
-                .font(.caption.weight(.semibold))
-            Text(motion.isAvailable ? "Tilt · tap recenter" : "Unavailable")
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.7))
-        }
-        .foregroundStyle(.white)
-        .shadow(color: .black.opacity(0.55), radius: 2, y: 1)
-        .fixedSize()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        TiltArtwork(label: label, isAvailable: motion.isAvailable)
         .contentShape(Rectangle())
         .onTapGesture { motion.recenter() }
         .onAppear { if scenePhase == .active { motion.start(onChange: onChange) } }
@@ -515,17 +367,5 @@ private final class MotionInputSource: ObservableObject {
             y: min(1, max(-1, (raw.y - neutral.y) / 0.6))
         )
         onChange?(value)
-    }
-}
-
-private extension Color {
-    init?(hex: String) {
-        var cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-        if cleaned.hasPrefix("#") { cleaned.removeFirst() }
-        guard cleaned.count == 6, let value = UInt32(cleaned, radix: 16) else { return nil }
-        let red = Double((value >> 16) & 0xFF) / 255
-        let green = Double((value >> 8) & 0xFF) / 255
-        let blue = Double(value & 0xFF) / 255
-        self = Color(.sRGB, red: red, green: green, blue: blue, opacity: 1)
     }
 }
