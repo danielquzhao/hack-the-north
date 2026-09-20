@@ -118,7 +118,7 @@ struct ContentView: View {
     private var stateIcon: String {
         switch pairingClient.state {
         case .disconnected:
-            "iphone.gen3.radiowaves.left.and.right"
+            "gamecontroller.fill"
         case .discovering, .connecting:
             "dot.radiowaves.left.and.right"
         case .authenticating:

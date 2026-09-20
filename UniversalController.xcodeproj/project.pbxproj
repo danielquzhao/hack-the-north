@@ -34,6 +34,8 @@
 		A10000000000000000000019 /* ControlArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001F /* ControlArtwork.swift */; };
 		A1000000000000000000001A /* ControllerSessionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* ControllerSessionPack.swift */; };
 		A1000000000000000000001B /* ControllerSessionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* ControllerSessionPack.swift */; };
+		A1000000000000000000001C /* AppIcons.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* AppIcons.xcassets */; };
+		A1000000000000000000001D /* AppIcons.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* AppIcons.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -63,6 +65,7 @@
 		B1000000000000000000001E /* TargetWindowScreenshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TargetWindowScreenshot.swift; sourceTree = "<group>"; };
 		B1000000000000000000001F /* ControlArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlArtwork.swift; sourceTree = "<group>"; };
 		B10000000000000000000020 /* ControllerSessionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerSessionPack.swift; sourceTree = "<group>"; };
+		B10000000000000000000021 /* AppIcons.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = AppIcons.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -98,6 +101,7 @@
 			children = (
 				C10000000000000000000003 /* UniversalControllerMac */,
 				C10000000000000000000004 /* UniversalControllerPhone */,
+				B10000000000000000000021 /* AppIcons.xcassets */,
 			);
 			path = Apps;
 			sourceTree = "<group>";
@@ -234,6 +238,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1000000000000000000001C /* AppIcons.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -241,6 +246,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1000000000000000000001D /* AppIcons.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -332,6 +338,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = B10000000000000000000018 /* SharedSigning.xcconfig */;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconMac;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
@@ -363,6 +370,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = B10000000000000000000018 /* SharedSigning.xcconfig */;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconMac;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
@@ -394,9 +402,10 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = B10000000000000000000018 /* SharedSigning.xcconfig */;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconPhone;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5BA4B43Y74;
+				DEVELOPMENT_TEAM = 9WYVA5AT3T;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Apps/UniversalControllerPhone/Info.plist;
@@ -430,9 +439,10 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = B10000000000000000000018 /* SharedSigning.xcconfig */;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconPhone;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5BA4B43Y74;
+				DEVELOPMENT_TEAM = 9WYVA5AT3T;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Apps/UniversalControllerPhone/Info.plist;
