@@ -1,6 +1,11 @@
 import AppKit
 import SwiftUI
 
+enum OverlayPanelLayout {
+    static let mainSize = CGSize(width: 540, height: 400)
+    static let workspaceSize = CGSize(width: 1100, height: 760)
+}
+
 private enum EditorToolTab: String, CaseIterable, Identifiable {
     case controls = "Controls"
     case assets = "Assets"
@@ -33,6 +38,7 @@ final class ControllerEditorState: ObservableObject {
     @Published var assetDropTargeted = false
     /// How many phone seats to generate. 1 = solo, 2 = local co-op with distinct mappings.
     @Published var playerCount = 1
+    @Published var isOnMainPage = true
 
     var draft: ControllerDocument? {
         get { sessionPack?.controller(at: selectedSeatIndex) }
@@ -56,6 +62,7 @@ final class ControllerEditorState: ObservableObject {
 
     func loadGenerated(_ pack: ControllerSessionPack) {
         sessionPack = pack
+        isOnMainPage = false
         playerCount = min(2, max(1, pack.seatCount))
         selectedSeatIndex = 0
         selectedControlID = pack.primaryController.layout.items.first?.controlID
@@ -68,6 +75,22 @@ final class ControllerEditorState: ObservableObject {
     func loadGenerated(_ document: ControllerDocument) {
         loadGenerated(.single(document))
     }
+
+    func resetToMainPage() {
+        isOnMainPage = true
+        sessionPack = nil
+        selectedSeatIndex = 0
+        selectedControlID = nil
+        prompt = ""
+        isGenerating = false
+        generationStatus = nil
+        generationError = nil
+        isIterativePrompt = false
+        layoutDirty = false
+        capturingShortcutControlID = nil
+        assetDropTargeted = false
+        playerCount = 1
+    }
 }
 
 struct MacOverlayView: View {
@@ -76,6 +99,7 @@ struct MacOverlayView: View {
     @ObservedObject var pairingHost: PairingSessionHost
     @ObservedObject var editorState: ControllerEditorState
     let onClose: () -> Void
+    let onReturnToMain: () -> Void
     let onRequestPermission: () -> Void
     let onGenerate: (String) -> Void
     let onSaveAPIKey: (String) -> String?
@@ -89,7 +113,7 @@ struct MacOverlayView: View {
     @State private var showKeyboardHelp = false
     @State private var apiKeyEntry = ""
     @State private var apiKeyError: String?
-    @State private var showingSettings = true
+    @State private var showingSettings = false
     @State private var selectedToolTab: EditorToolTab = .controls
 
     private var draft: ControllerDocument? {
@@ -109,16 +133,57 @@ struct MacOverlayView: View {
     }
 
     private var isWorkspaceExpanded: Bool {
-        draft != nil
+        draft != nil && !editorState.isOnMainPage
     }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             HStack(alignment: .top, spacing: 20) {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: isWorkspaceExpanded ? 18 : 22) {
+                    if isWorkspaceExpanded {
+                        Button {
+                            withAnimation(.smooth(duration: 0.3)) {
+                                onReturnToMain()
+                                showKeyboardHelp = false
+                                apiKeyEntry = ""
+                                apiKeyError = nil
+                            }
+                        } label: {
+                            Label("Back to main page", systemImage: "chevron.left")
+                                .font(.subheadline.weight(.medium))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Back to main page")
+                        .help("Discard this controller and disconnect paired iPhones")
+                    } else {
+                        Button {
+                            withAnimation(.smooth(duration: 0.25)) {
+                                showingSettings.toggle()
+                            }
+                        } label: {
+                            Label(
+                                showingSettings ? "Back to controller setup" : "Settings",
+                                systemImage: showingSettings ? "chevron.left" : "gearshape"
+                            )
+                            .font(.subheadline.weight(.medium))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                    }
+
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Universal Controller")
-                            .font(.title2.weight(.semibold))
+                        HStack(spacing: 10) {
+                            if !isWorkspaceExpanded {
+                                Image(systemName: "gamecontroller.fill")
+                                    .font(.system(size: 23, weight: .medium))
+                                    .accessibilityHidden(true)
+                            }
+                            Text("Universal Controller")
+                                .font(isWorkspaceExpanded
+                                    ? .title2.weight(.semibold)
+                                    : .system(size: 26, weight: .semibold))
+                        }
                         Text("Design a controller for the app you're using")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -176,22 +241,28 @@ struct MacOverlayView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     } else {
                         ScrollView {
-                            VStack(alignment: .leading, spacing: 18) {
+                            VStack(alignment: .leading, spacing: 21) {
                                 if showingSettings {
                                     settingsContent
-                                        .transition(.move(edge: .top).combined(with: .opacity))
-                                }
+                                        .transition(.opacity)
+                                } else {
+                                    if let context {
+                                        Label("Creating for \(context.displayName)", systemImage: "macwindow")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
 
-                                generationSection
+                                    generationSection
 
-                                if pairingHost.state != .idle {
-                                    pairingSection
-                                }
+                                    if pairingHost.state != .idle {
+                                        pairingSection
+                                    }
 
-                                if let errorMessage {
-                                    Text(errorMessage)
-                                        .font(.caption)
-                                        .foregroundStyle(.red)
+                                    if let errorMessage {
+                                        Text(errorMessage)
+                                            .font(.caption)
+                                            .foregroundStyle(.red)
+                                    }
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -224,10 +295,13 @@ struct MacOverlayView: View {
             .accessibilityLabel("Close")
         }
         .padding(24)
-        .frame(width: isWorkspaceExpanded ? 1100 : 430, height: 760)
+        .frame(
+            width: isWorkspaceExpanded ? OverlayPanelLayout.workspaceSize.width : OverlayPanelLayout.mainSize.width,
+            height: isWorkspaceExpanded ? OverlayPanelLayout.workspaceSize.height : OverlayPanelLayout.mainSize.height
+        )
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
         .onAppear {
-            showingSettings = !isWorkspaceExpanded
+            showingSettings = false
         }
         .onChange(of: isWorkspaceExpanded) { _, expanded in
             withAnimation(.smooth(duration: 0.55)) {
@@ -539,26 +613,28 @@ struct MacOverlayView: View {
 
 private extension MacOverlayView {
     var generationSection: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: isWorkspaceExpanded ? 9 : 14) {
             Text("YOUR CONTROLLER")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            Picker("Players", selection: $editorState.playerCount) {
-                Text("1").tag(1)
-                Text("2").tag(2)
-            }
-            .pickerStyle(.segmented)
-            .disabled(!canEditDraft)
-            .accessibilityLabel("Players")
+            if !isWorkspaceExpanded {
+                Picker("Players", selection: $editorState.playerCount) {
+                    Text("1").tag(1)
+                    Text("2").tag(2)
+                }
+                .pickerStyle(.segmented)
+                .disabled(!canEditDraft)
+                .accessibilityLabel("Players")
 
-            Text(
-                editorState.playerCount == 2
-                    ? "Two phones share one layout. AI maps Player 1 and Player 2 to different keys."
-                    : "One phone controller for the Mac app."
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
+                Text(
+                    editorState.playerCount == 2
+                        ? "Two phones share one layout. AI maps Player 1 and Player 2 to different keys."
+                        : "One phone controller for the Mac app."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
 
             TextField(
                 generationPlaceholder,
@@ -566,6 +642,7 @@ private extension MacOverlayView {
                 axis: .vertical
             )
             .textFieldStyle(.plain)
+            .font(isWorkspaceExpanded ? .body : .subheadline)
             .lineLimit(2...4)
             .padding(12)
             .background(.background, in: RoundedRectangle(cornerRadius: 12))
@@ -591,6 +668,17 @@ private extension MacOverlayView {
                 }
                 .buttonStyle(SolidGreyButtonStyle())
                 .disabled(!canGenerate)
+            }
+
+            if !editorState.hasAPIKey {
+                Button {
+                    showingSettings = true
+                } label: {
+                    Label("Add an API key in Settings to generate", systemImage: "key")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
             }
 
             if let message = editorState.generationError {
