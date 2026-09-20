@@ -96,7 +96,7 @@ struct DPadArtwork: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let side = min(geometry.size.width, geometry.size.height * 0.82)
+            let side = max(0, min(geometry.size.width, geometry.size.height - 24))
             VStack(spacing: 6) {
                 DPadFaceArtwork(side: side, activeDirection: activeDirection)
                     .frame(width: side, height: side)
@@ -149,7 +149,7 @@ struct JoystickArtwork: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let side = min(150, geometry.size.width, max(0, geometry.size.height - 24))
+            let side = max(0, min(geometry.size.width, geometry.size.height - 24))
             VStack(spacing: 8) {
                 ZStack {
                     Circle()

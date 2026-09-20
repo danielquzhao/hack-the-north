@@ -102,7 +102,7 @@ private struct DPadControlView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let side = min(geometry.size.width, geometry.size.height * 0.82)
+            let side = max(0, min(geometry.size.width, geometry.size.height - 24))
             VStack(spacing: 6) {
                 DPadFaceArtwork(side: side, activeDirection: activeDirection)
                 .frame(width: side, height: side)
@@ -268,30 +268,34 @@ private struct JoystickControlView: View {
     @State private var isDragging = false
 
     var body: some View {
-        JoystickArtwork(label: label, offset: offset)
-            .contentShape(Rectangle())
-            .highPriorityGesture(DragGesture(minimumDistance: 0)
-                .onChanged { gesture in
-                    if !isDragging {
-                        isDragging = true
-                        if hapticsEnabled {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        GeometryReader { geometry in
+            let side = max(1, min(geometry.size.width, geometry.size.height - 24))
+            let travel = max(1, side * 0.35)
+            JoystickArtwork(label: label, offset: offset)
+                .contentShape(Rectangle())
+                .highPriorityGesture(DragGesture(minimumDistance: 0)
+                    .onChanged { gesture in
+                        if !isDragging {
+                            isDragging = true
+                            if hapticsEnabled {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            }
                         }
+                        let x = gesture.translation.width
+                        let y = gesture.translation.height
+                        let length = max(1, hypot(x, y))
+                        let scale = min(1, travel / length)
+                        offset = CGSize(width: x * scale, height: y * scale)
+                        onChange(Vector2Value(
+                            x: Double(offset.width / travel),
+                            y: Double(-offset.height / travel)
+                        ))
                     }
-                    let x = gesture.translation.width
-                    let y = gesture.translation.height
-                    let length = max(1, hypot(x, y))
-                    let scale = min(1, 52 / length)
-                    offset = CGSize(width: x * scale, height: y * scale)
-                    onChange(Vector2Value(
-                        x: Double(offset.width / 52),
-                        y: Double(-offset.height / 52)
-                    ))
-                }
-                .onEnded { _ in
-                    offset = .zero
-                    isDragging = false
-                })
+                    .onEnded { _ in
+                        offset = .zero
+                        isDragging = false
+                    })
+        }
         .accessibilityLabel("\(label) thumbstick")
     }
 }

@@ -130,6 +130,45 @@ final class SchemaValidatorTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(ControllerDocument.self, from: encoded), document)
     }
 
+    func testExplicitGridPlacementKeepsIndependentPositions() throws {
+        let layout = try ControllerLayoutGrid.layout(for: .landscape, placements: [
+            ControllerGridPlacement(controlID: "pad", kind: .dpad,
+                                    column: 1, row: 2, columnSpan: 5, rowSpan: 6),
+            ControllerGridPlacement(controlID: "next", kind: .button,
+                                    column: 15, row: 3, columnSpan: 3, rowSpan: 3),
+        ])
+        XCTAssertEqual(layout.items[0].frame.x, 1.0 / 20 + 0.008, accuracy: 0.0001)
+        XCTAssertEqual(layout.items[0].frame.y, 2.0 / 10 + 0.008, accuracy: 0.0001)
+        XCTAssertEqual(layout.items[1].frame.x, 15.0 / 20 + 0.008, accuracy: 0.0001)
+    }
+
+    func testGridRejectsOverlapAndOutOfBoundsPlacement() {
+        let pad = ControllerGridPlacement(controlID: "pad", kind: .dpad,
+                                          column: 1, row: 2, columnSpan: 5, rowSpan: 6)
+        XCTAssertThrowsError(try ControllerLayoutGrid.layout(for: .landscape, placements: [
+            pad,
+            ControllerGridPlacement(controlID: "button", kind: .button,
+                                    column: 4, row: 3, columnSpan: 3, rowSpan: 2),
+        ]))
+        XCTAssertThrowsError(try ControllerLayoutGrid.layout(for: .landscape, placements: [
+            ControllerGridPlacement(controlID: "outside", kind: .dpad,
+                                    column: 18, row: 3, columnSpan: 3, rowSpan: 3),
+        ]))
+    }
+
+    func testDPadVisibleFrameTightensWideLayoutArea() {
+        let original = LayoutRect(x: 0.02, y: 0.05, width: 0.94, height: 0.91)
+        let frame = ControllerLayoutGeometry.visibleFrame(
+            for: ControlDefinition.dpad(id: "pad", label: "Move").kind,
+            in: original,
+            canvasWidth: 600,
+            canvasHeight: 300
+        )
+        XCTAssertLessThan(frame.width, original.width / 2)
+        XCTAssertEqual(frame.width * 600 + 24, frame.height * 300, accuracy: 0.01)
+        XCTAssertEqual(frame.x + frame.width / 2, original.x + original.width / 2, accuracy: 0.001)
+    }
+
     func testTrackpadDragAndPinchRouteToSeparateActions() throws {
         let bindings = [
             ControlBinding(
