@@ -43,7 +43,7 @@ struct OpenAIControllerGenerator: ControllerGenerating {
 
     init(
         endpoint: URL = URL(string: "https://api.openai.com/v1/responses")!,
-        model: String = "gpt-4o-mini"
+        model: String = "gpt-5.6-terra"
     ) {
         self.endpoint = endpoint
         self.model = model
@@ -134,8 +134,9 @@ struct OpenAIControllerGenerator: ControllerGenerating {
         ]
         let payload: [String: Any] = [
             "model": model,
+            "reasoning": ["effort": "high"],
             "store": false,
-            "max_output_tokens": 4000,
+            "max_output_tokens": 25_000,
             "input": [
                 ["role": "system", "content": system],
                 ["role": "user", "content": userContent],
@@ -153,7 +154,7 @@ struct OpenAIControllerGenerator: ControllerGenerating {
         urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.httpBody = try JSONSerialization.data(withJSONObject: payload)
-        urlRequest.timeoutInterval = 45
+        urlRequest.timeoutInterval = 180
 
         let (data, response) = try await URLSession.shared.data(for: urlRequest)
         guard let httpResponse = response as? HTTPURLResponse else {
