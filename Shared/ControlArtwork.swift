@@ -68,7 +68,7 @@ struct ButtonArtwork: View {
     }
 }
 
-enum DPadDirection: Equatable {
+enum DPadDirection: Hashable {
     case up, down, left, right
 
     var began: ControlEventKind {
@@ -115,31 +115,77 @@ struct DPadFaceArtwork: View {
     let activeDirection: DPadDirection?
 
     var body: some View {
+        let outline = RoundedRectangle(cornerRadius: side * 0.19, style: .continuous)
         ZStack {
-            RoundedRectangle(cornerRadius: side * 0.18, style: .continuous)
-                .fill(Color(white: 0.20))
-            RoundedRectangle(cornerRadius: side * 0.18, style: .continuous)
-                .strokeBorder(.white.opacity(0.25), lineWidth: 2)
-            triangle(.up).position(x: side * 0.5, y: side * 0.21)
-            triangle(.down).position(x: side * 0.5, y: side * 0.79)
-            triangle(.left).position(x: side * 0.21, y: side * 0.5)
-            triangle(.right).position(x: side * 0.79, y: side * 0.5)
-            Circle().fill(Color(white: 0.12))
-                .frame(width: side * 0.18, height: side * 0.18)
+            outline.fill(
+                LinearGradient(
+                    colors: [Color(red: 0.61, green: 0.55, blue: 0.65),
+                             Color(red: 0.48, green: 0.42, blue: 0.53)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            if let activeDirection {
+                sector(activeDirection)
+                    .fill(.white.opacity(0.18))
+            }
+            Path { path in
+                path.move(to: CGPoint(x: 0, y: 0))
+                path.addLine(to: CGPoint(x: side, y: side))
+                path.move(to: CGPoint(x: side, y: 0))
+                path.addLine(to: CGPoint(x: 0, y: side))
+            }
+            .stroke(.black.opacity(0.30), lineWidth: max(1, side * 0.005))
+            ForEach([DPadDirection.up, .down, .left, .right], id: \.self) { direction in
+                arrow(direction)
+                    .stroke(
+                        .white.opacity(activeDirection == direction ? 1 : 0.88),
+                        style: StrokeStyle(
+                            lineWidth: max(2, side * 0.018),
+                            lineCap: .round,
+                            lineJoin: .round
+                        )
+                    )
+            }
         }
+        .frame(width: side, height: side)
+        .clipShape(outline)
+        .overlay(outline.strokeBorder(.white.opacity(0.16), lineWidth: 1.5))
     }
 
-    private func triangle(_ direction: DPadDirection) -> some View {
-        let angle: Double = switch direction {
-        case .up: 0
-        case .down: 180
-        case .left: -90
-        case .right: 90
+    private func sector(_ direction: DPadDirection) -> Path {
+        let center = CGPoint(x: side / 2, y: side / 2)
+        let corners: (CGPoint, CGPoint) = switch direction {
+        case .up: (CGPoint(x: 0, y: 0), CGPoint(x: side, y: 0))
+        case .down: (CGPoint(x: side, y: side), CGPoint(x: 0, y: side))
+        case .left: (CGPoint(x: 0, y: side), CGPoint(x: 0, y: 0))
+        case .right: (CGPoint(x: side, y: 0), CGPoint(x: side, y: side))
         }
-        return Image(systemName: "triangle.fill")
-            .font(.system(size: side * 0.20, weight: .heavy))
-            .rotationEffect(.degrees(angle))
-            .foregroundStyle(activeDirection == direction ? .white : .white.opacity(0.65))
+        var path = Path()
+        path.move(to: corners.0)
+        path.addLine(to: corners.1)
+        path.addLine(to: center)
+        path.closeSubpath()
+        return path
+    }
+
+    private func arrow(_ direction: DPadDirection) -> Path {
+        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            let rotated: (CGFloat, CGFloat) = switch direction {
+            case .up: (x, y)
+            case .down: (1 - x, 1 - y)
+            case .left: (y, 1 - x)
+            case .right: (1 - y, x)
+            }
+            return CGPoint(x: rotated.0 * side, y: rotated.1 * side)
+        }
+        var path = Path()
+        path.move(to: point(0.5, 0.34))
+        path.addLine(to: point(0.5, 0.23))
+        path.move(to: point(0.455, 0.275))
+        path.addLine(to: point(0.5, 0.23))
+        path.addLine(to: point(0.545, 0.275))
+        return path
     }
 }
 

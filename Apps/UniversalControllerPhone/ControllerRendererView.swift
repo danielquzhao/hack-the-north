@@ -106,7 +106,7 @@ private struct DPadControlView: View {
             VStack(spacing: 6) {
                 DPadFaceArtwork(side: side, activeDirection: activeDirection)
                 .frame(width: side, height: side)
-                .contentShape(RoundedRectangle(cornerRadius: side * 0.18))
+                .contentShape(RoundedRectangle(cornerRadius: side * 0.19))
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
