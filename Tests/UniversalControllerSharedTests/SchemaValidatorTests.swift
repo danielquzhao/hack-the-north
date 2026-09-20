@@ -9,24 +9,54 @@ final class SchemaValidatorTests: XCTestCase {
             [ControlCapabilityDescriptor(
                 id: .button,
                 outputKind: .none,
-                events: [.triggered, .began, .ended]
+                events: [.triggered, .began, .ended],
+                displayName: "Button",
+                systemImage: "hand.tap.fill",
+                summary: "Tap to send a keyboard shortcut",
+                defaultWidth: 0.28,
+                defaultHeight: 0.18,
+                occupiesLayout: true
             ), ControlCapabilityDescriptor(
                 id: .dpad,
                 outputKind: .none,
                 events: [.upBegan, .upEnded, .downBegan, .downEnded,
-                         .leftBegan, .leftEnded, .rightBegan, .rightEnded]
+                         .leftBegan, .leftEnded, .rightBegan, .rightEnded],
+                displayName: "D-pad",
+                systemImage: "dpad.fill",
+                summary: "Four independently mapped directions",
+                defaultWidth: 0.36,
+                defaultHeight: 0.36,
+                occupiesLayout: true
             ), ControlCapabilityDescriptor(
                 id: .joystick,
                 outputKind: .vector2,
-                events: [.changed]
+                events: [.changed],
+                displayName: "Joystick",
+                systemImage: "circle.circle",
+                summary: "Stick that moves the Mac pointer",
+                defaultWidth: 0.36,
+                defaultHeight: 0.36,
+                occupiesLayout: true
             ), ControlCapabilityDescriptor(
                 id: .motion,
                 outputKind: .vector2,
-                events: [.changed]
+                events: [.changed],
+                displayName: "Tilt",
+                systemImage: "gyroscope",
+                summary: "Phone tilt moves the Mac pointer",
+                defaultWidth: 0.16,
+                defaultHeight: 0.12,
+                occupiesLayout: false
             ), ControlCapabilityDescriptor(
                 id: .trackpad,
                 outputKind: .vector2,
-                events: [.began, .changed, .ended, .pinchChanged]
+                events: [.began, .changed, .ended, .pinchChanged],
+                displayName: "Trackpad",
+                systemImage: "hand.draw",
+                summary: "Drag and pinch gestures",
+                defaultWidth: 0.44,
+                defaultHeight: 0.32,
+                occupiesLayout: true
             )]
         )
         XCTAssertEqual(

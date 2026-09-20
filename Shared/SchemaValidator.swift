@@ -4,6 +4,15 @@ struct ControlCapabilityDescriptor: Codable, Equatable, Sendable {
     let id: ControlCapabilityID
     let outputKind: InputValueKind
     let events: [ControlEventKind]
+    /// Shown in the Mac asset library. Keep catalog-driven so new kinds appear automatically.
+    let displayName: String
+    let systemImage: String
+    let summary: String
+    /// Default normalized size when dropping into the freeform canvas.
+    let defaultWidth: Double
+    let defaultHeight: Double
+    /// When false, the control is chrome/sensor UI that may overlay interactive pads.
+    let occupiesLayout: Bool
 }
 
 struct ActionCapabilityDescriptor: Codable, Equatable, Sendable {
@@ -24,28 +33,58 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
             ControlCapabilityDescriptor(
                 id: .button,
                 outputKind: .none,
-                events: [.triggered, .began, .ended]
+                events: [.triggered, .began, .ended],
+                displayName: "Button",
+                systemImage: "hand.tap.fill",
+                summary: "Tap to send a keyboard shortcut",
+                defaultWidth: 0.28,
+                defaultHeight: 0.18,
+                occupiesLayout: true
             ),
             ControlCapabilityDescriptor(
                 id: .dpad,
                 outputKind: .none,
                 events: [.upBegan, .upEnded, .downBegan, .downEnded,
-                         .leftBegan, .leftEnded, .rightBegan, .rightEnded]
+                         .leftBegan, .leftEnded, .rightBegan, .rightEnded],
+                displayName: "D-pad",
+                systemImage: "dpad.fill",
+                summary: "Four independently mapped directions",
+                defaultWidth: 0.36,
+                defaultHeight: 0.36,
+                occupiesLayout: true
             ),
             ControlCapabilityDescriptor(
                 id: .joystick,
                 outputKind: .vector2,
-                events: [.changed]
+                events: [.changed],
+                displayName: "Joystick",
+                systemImage: "circle.circle",
+                summary: "Stick that moves the Mac pointer",
+                defaultWidth: 0.36,
+                defaultHeight: 0.36,
+                occupiesLayout: true
             ),
             ControlCapabilityDescriptor(
                 id: .motion,
                 outputKind: .vector2,
-                events: [.changed]
+                events: [.changed],
+                displayName: "Tilt",
+                systemImage: "gyroscope",
+                summary: "Phone tilt moves the Mac pointer",
+                defaultWidth: 0.16,
+                defaultHeight: 0.12,
+                occupiesLayout: false
             ),
             ControlCapabilityDescriptor(
                 id: .trackpad,
                 outputKind: .vector2,
-                events: [.began, .changed, .ended, .pinchChanged]
+                events: [.began, .changed, .ended, .pinchChanged],
+                displayName: "Trackpad",
+                systemImage: "hand.draw",
+                summary: "Drag and pinch gestures",
+                defaultWidth: 0.44,
+                defaultHeight: 0.32,
+                occupiesLayout: true
             ),
         ],
         actions: [
@@ -69,6 +108,14 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
         buttonFaces: ButtonFace.allCases,
         motionSources: MotionSource.allCases
     )
+
+    func control(id: ControlCapabilityID) -> ControlCapabilityDescriptor? {
+        controls.first { $0.id == id }
+    }
+
+    func occupiesLayout(_ id: ControlCapabilityID) -> Bool {
+        control(id: id)?.occupiesLayout ?? true
+    }
 }
 
 struct SchemaValidationError: LocalizedError, Equatable {
@@ -296,5 +343,84 @@ enum SchemaValidator {
 
     private static func error(_ reason: String) -> SchemaValidationError {
         SchemaValidationError(reason: reason)
+    }
+}
+
+extension ControlCapabilityDescriptor {
+    /// Builds a catalog control with safe default configuration for the editor library.
+    func makeControl(id: String) -> ControlDefinition {
+        switch self.id {
+        case .button:
+            .button(id: id, label: displayName)
+        case .dpad:
+            .dpad(id: id, label: displayName)
+        case .joystick:
+            .joystick(id: id, label: displayName)
+        case .motion:
+            .tilt(id: id, label: displayName)
+        case .trackpad:
+            .trackpad(id: id, label: displayName)
+        }
+    }
+
+    /// Default bindings so a dropped control validates until the user remaps it.
+    func makeDefaultBindings(controlID: String) -> [ControlBinding] {
+        switch id {
+        case .button:
+            [ControlBinding(
+                id: "\(controlID)-binding",
+                controlID: controlID,
+                event: .triggered,
+                action: .keyChord(KeyChordAction(key: .rightArrow, modifiers: []))
+            )]
+        case .dpad:
+            [(.upBegan, SemanticKey.upArrow),
+             (.downBegan, .downArrow),
+             (.leftBegan, .leftArrow),
+             (.rightBegan, .rightArrow)].map { event, key in
+                ControlBinding(
+                    id: "\(controlID)-\(event.rawValue)",
+                    controlID: controlID,
+                    event: event,
+                    action: .keyChord(KeyChordAction(key: key, modifiers: []))
+                )
+            }
+        case .joystick, .motion:
+            [ControlBinding(
+                id: "\(controlID)-move",
+                controlID: controlID,
+                event: .changed,
+                action: .mouseMove(MouseMoveAction(gain: 12, deadZone: 0.1))
+            )]
+        case .trackpad:
+            [
+                ControlBinding(
+                    id: "\(controlID)-drag",
+                    controlID: controlID,
+                    event: .changed,
+                    action: .mouseDrag(MouseDragAction(
+                        gain: 12,
+                        deadZone: 0,
+                        button: .left,
+                        modifiers: []
+                    ))
+                ),
+                ControlBinding(
+                    id: "\(controlID)-zoom",
+                    controlID: controlID,
+                    event: .pinchChanged,
+                    action: .scroll(ScrollAction(gain: 10))
+                ),
+            ]
+        }
+    }
+
+    var defaultFrame: LayoutRect {
+        LayoutRect(
+            x: 0.5 - defaultWidth / 2,
+            y: 0.5 - defaultHeight / 2,
+            width: defaultWidth,
+            height: defaultHeight
+        ).clamped()
     }
 }
