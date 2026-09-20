@@ -201,7 +201,10 @@ struct OpenAIControllerGenerator: ControllerGenerating {
                 return .rotationPad(id: id, label: item.label)
             }
         }
-        func layoutItems(order: [Int], orientation: ControllerOrientation) throws -> [ControllerLayoutItem] {
+        func layoutSpecs(
+            order: [Int],
+            orientation: ControllerOrientation
+        ) throws -> [(id: String, columnSpan: Int, rowSpan: Int)] {
             guard order.sorted() == body.controls.indices.map({ $0 + 1 }) else {
                 throw ControllerGenerationError.invalidResponse(
                     "\(orientation.displayName) layout must order every control exactly once."
@@ -209,8 +212,8 @@ struct OpenAIControllerGenerator: ControllerGenerating {
             }
             return order.map { position in
                 let item = body.controls[position - 1]
-                return ControllerLayoutItem(
-                    controlID: "control-\(position)",
+                return (
+                    id: "control-\(position)",
                     columnSpan: orientation == .portrait
                         ? item.portraitColumnSpan : item.landscapeColumnSpan,
                     rowSpan: orientation == .portrait
@@ -218,8 +221,8 @@ struct OpenAIControllerGenerator: ControllerGenerating {
                 )
             }
         }
-        let portraitItems = try layoutItems(order: body.portraitOrder, orientation: .portrait)
-        let landscapeItems = try layoutItems(order: body.landscapeOrder, orientation: .landscape)
+        let portraitItems = try layoutSpecs(order: body.portraitOrder, orientation: .portrait)
+        let landscapeItems = try layoutSpecs(order: body.landscapeOrder, orientation: .landscape)
         let bindings = body.controls.enumerated().flatMap { index, item -> [ControlBinding] in
             let id = "control-\(index + 1)"
             let action: ActionDefinition
@@ -277,13 +280,13 @@ struct OpenAIControllerGenerator: ControllerGenerating {
             ),
             preferredOrientation: body.preferredOrientation,
             layouts: ControllerLayouts(
-                portrait: ControllerLayout(
+                portrait: AbsoluteLayoutBuilder.fromGrid(
                     columns: body.portraitColumns,
-                    items: portraitItems
+                    specs: portraitItems
                 ),
-                landscape: ControllerLayout(
+                landscape: AbsoluteLayoutBuilder.fromGrid(
                     columns: body.landscapeColumns,
-                    items: landscapeItems
+                    specs: landscapeItems
                 )
             ),
             controls: controls,

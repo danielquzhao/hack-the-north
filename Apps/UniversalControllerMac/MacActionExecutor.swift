@@ -288,22 +288,62 @@ enum MacActionExecutor {
 
     private static func keyCode(for key: SemanticKey) -> CGKeyCode {
         switch key {
-        case .leftArrow:
-            123
-        case .rightArrow:
-            124
-        case .downArrow:
-            125
-        case .upArrow:
-            126
-        case .space:
-            49
-        case .letterB:
-            11
-        case .escape:
-            53
-        case .enter:
-            36
+        case .letterA: 0
+        case .letterS: 1
+        case .letterD: 2
+        case .letterF: 3
+        case .letterH: 4
+        case .letterG: 5
+        case .letterZ: 6
+        case .letterX: 7
+        case .letterC: 8
+        case .letterV: 9
+        case .letterB: 11
+        case .letterQ: 12
+        case .letterW: 13
+        case .letterE: 14
+        case .letterR: 15
+        case .letterY: 16
+        case .letterT: 17
+        case .digit1: 18
+        case .digit2: 19
+        case .digit3: 20
+        case .digit4: 21
+        case .digit6: 22
+        case .digit5: 23
+        case .equal: 24
+        case .digit9: 25
+        case .digit7: 26
+        case .minus: 27
+        case .digit8: 28
+        case .digit0: 29
+        case .rightBracket: 30
+        case .letterO: 31
+        case .letterU: 32
+        case .leftBracket: 33
+        case .letterI: 34
+        case .letterP: 35
+        case .enter: 36
+        case .letterL: 37
+        case .letterJ: 38
+        case .quote: 39
+        case .letterK: 40
+        case .semicolon: 41
+        case .backslash: 42
+        case .comma: 43
+        case .slash: 44
+        case .letterN: 45
+        case .letterM: 46
+        case .period: 47
+        case .tab: 48
+        case .space: 49
+        case .grave: 50
+        case .delete: 51
+        case .escape: 53
+        case .leftArrow: 123
+        case .rightArrow: 124
+        case .downArrow: 125
+        case .upArrow: 126
         }
     }
 

@@ -82,21 +82,13 @@ final class PairingProtocolTests: XCTestCase {
             ),
             preferredOrientation: .portrait,
             layouts: ControllerLayouts(
-                portrait: ControllerLayout(
+                portrait: AbsoluteLayoutBuilder.fromGrid(
                     columns: 1,
-                    items: [ControllerLayoutItem(
-                        controlID: "next-slide",
-                        columnSpan: 1,
-                        rowSpan: 1
-                    )]
+                    specs: [("next-slide", 1, 1)]
                 ),
-                landscape: ControllerLayout(
+                landscape: AbsoluteLayoutBuilder.fromGrid(
                     columns: 2,
-                    items: [ControllerLayoutItem(
-                        controlID: "next-slide",
-                        columnSpan: 2,
-                        rowSpan: 1
-                    )]
+                    specs: [("next-slide", 2, 1)]
                 )
             ),
             controls: [.button(id: "next-slide", label: "Next Slide")],

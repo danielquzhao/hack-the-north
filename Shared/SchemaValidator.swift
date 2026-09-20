@@ -86,8 +86,7 @@ struct SchemaValidationError: LocalizedError, Equatable {
 enum SchemaValidator {
     static let maximumControls = 32
     static let maximumBindings = 64
-    static let maximumColumns = 4
-    static let maximumSpan = 4
+    static let minimumFrameSize = 0.08
 
     static func validate(_ document: ControllerDocument) throws {
         guard document.schemaVersion == ControllerDocument.currentSchemaVersion else {
@@ -232,12 +231,6 @@ enum SchemaValidator {
         orientation: ControllerOrientation,
         controlIDs: [String]
     ) throws {
-        guard (1...maximumColumns).contains(layout.columns) else {
-            throw error(
-                "\(orientation.displayName) layout column count must be between 1 and \(maximumColumns)."
-            )
-        }
-
         let layoutIDs = layout.items.map(\.controlID)
         guard Set(layoutIDs).count == layoutIDs.count else {
             throw error("Each control may appear only once in the \(orientation.rawValue) layout.")
@@ -249,14 +242,16 @@ enum SchemaValidator {
         }
 
         for item in layout.items {
-            guard (1...layout.columns).contains(item.columnSpan) else {
-                throw error(
-                    "Control '\(item.controlID)' has an invalid \(orientation.rawValue) column span."
-                )
+            let frame = item.frame
+            guard frame.x.isFinite, frame.y.isFinite,
+                  frame.width.isFinite, frame.height.isFinite else {
+                throw error("Control '\(item.controlID)' has a non-finite \(orientation.rawValue) frame.")
             }
-            guard (1...maximumSpan).contains(item.rowSpan) else {
+            guard frame.x >= 0, frame.y >= 0,
+                  frame.width >= minimumFrameSize, frame.height >= minimumFrameSize,
+                  frame.maxX <= 1.000_001, frame.maxY <= 1.000_001 else {
                 throw error(
-                    "Control '\(item.controlID)' has an invalid \(orientation.rawValue) row span."
+                    "Control '\(item.controlID)' has an invalid \(orientation.rawValue) frame."
                 )
             }
         }

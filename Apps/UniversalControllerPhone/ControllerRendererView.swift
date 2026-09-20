@@ -9,32 +9,22 @@ struct ControllerRendererView: View {
     var body: some View {
         GeometryReader { geometry in
             if orientationMatches(geometry.size) {
-                let spacing: CGFloat = 12
-                let heightUnits = rows.reduce(0) { $0 + $1.heightUnits }
-                let availableHeight = max(
-                    0,
-                    geometry.size.height - CGFloat(max(rows.count - 1, 0)) * spacing
-                )
-                let contentHeight = max(availableHeight, CGFloat(heightUnits) * 112)
-
-                ScrollView {
-                    Grid(horizontalSpacing: spacing, verticalSpacing: spacing) {
-                        ForEach(rows) { row in
-                            GridRow {
-                                ForEach(row.items) { item in
-                                    if let control = document.control(id: item.controlID) {
-                                        controlView(control)
-                                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                            .gridCellColumns(item.columnSpan)
-                                    }
-                                }
-                            }
-                            .frame(height: contentHeight * CGFloat(row.heightUnits) / CGFloat(max(heightUnits, 1)))
+                ZStack(alignment: .topLeading) {
+                    ForEach(document.layout.items) { item in
+                        if let control = document.control(id: item.controlID) {
+                            controlView(control)
+                                .frame(
+                                    width: geometry.size.width * item.frame.width,
+                                    height: geometry.size.height * item.frame.height
+                                )
+                                .position(
+                                    x: geometry.size.width * (item.frame.x + item.frame.width / 2),
+                                    y: geometry.size.height * (item.frame.y + item.frame.height / 2)
+                                )
                         }
                     }
-                    .frame(maxWidth: .infinity)
                 }
-                .scrollIndicators(.hidden)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 14) {
                     Image(systemName: document.preferredOrientation == .landscape
@@ -59,36 +49,6 @@ struct ControllerRendererView: View {
             size.height >= size.width
         case .landscape:
             size.width > size.height
-        }
-    }
-
-    private var rows: [ControllerLayoutRow] {
-        var groupedItems: [[ControllerLayoutItem]] = []
-        var currentItems: [ControllerLayoutItem] = []
-        var occupiedColumns = 0
-
-        for item in document.layout.items {
-            if occupiedColumns + item.columnSpan > document.layout.columns {
-                groupedItems.append(currentItems)
-                currentItems = []
-                occupiedColumns = 0
-            }
-
-            currentItems.append(item)
-            occupiedColumns += item.columnSpan
-
-            if occupiedColumns == document.layout.columns {
-                groupedItems.append(currentItems)
-                currentItems = []
-                occupiedColumns = 0
-            }
-        }
-
-        if !currentItems.isEmpty {
-            groupedItems.append(currentItems)
-        }
-        return groupedItems.enumerated().map {
-            ControllerLayoutRow(id: $0.offset, items: $0.element)
         }
     }
 
@@ -138,15 +98,6 @@ struct ControllerRendererView: View {
     }
 }
 
-private struct ControllerLayoutRow: Identifiable {
-    let id: Int
-    let items: [ControllerLayoutItem]
-
-    var heightUnits: Int {
-        max(items.map(\.rowSpan).max() ?? 1, 1)
-    }
-}
-
 private struct ButtonControlView: View {
     let control: ControlDefinition
     let configuration: ButtonControlConfiguration
@@ -158,14 +109,7 @@ private struct ButtonControlView: View {
     var body: some View {
         Group {
             if configuration.face == .standard {
-                switch configuration.variant {
-                case .primary:
-                    button.buttonStyle(.borderedProminent)
-                case .secondary:
-                    button.buttonStyle(.bordered)
-                case .destructive:
-                    button.buttonStyle(.borderedProminent).tint(.red)
-                }
+                standardButton
             } else {
                 gamepadButton
             }
@@ -181,13 +125,19 @@ private struct ButtonControlView: View {
         }
     }
 
-    private var button: some View {
+    private var standardButton: some View {
         Button {} label: {
             Text(control.label)
                 .font(.title2.bold())
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.vertical, 16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(tintColor)
+                )
         }
+        .buttonStyle(.plain)
     }
 
     private var gamepadButton: some View {
@@ -219,14 +169,12 @@ private struct ButtonControlView: View {
         .accessibilityLabel("\(configuration.face.rawValue.uppercased()), \(control.label)")
     }
 
+    private var tintColor: Color {
+        Color(hex: configuration.tintHex) ?? .indigo
+    }
+
     private var faceColor: Color {
-        switch configuration.face {
-        case .standard: .indigo
-        case .a: .green
-        case .b: .red
-        case .x: .blue
-        case .y: .orange
-        }
+        tintColor
     }
 
     private func press() {
@@ -543,5 +491,17 @@ private final class MotionInputSource: ObservableObject {
             y: min(1, max(-1, (raw.y - neutral.y) / 0.6))
         )
         onChange?(value)
+    }
+}
+
+private extension Color {
+    init?(hex: String) {
+        var cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.hasPrefix("#") { cleaned.removeFirst() }
+        guard cleaned.count == 6, let value = UInt32(cleaned, radix: 16) else { return nil }
+        let red = Double((value >> 16) & 0xFF) / 255
+        let green = Double((value >> 8) & 0xFF) / 255
+        let blue = Double(value & 0xFF) / 255
+        self = Color(.sRGB, red: red, green: green, blue: blue, opacity: 1)
     }
 }

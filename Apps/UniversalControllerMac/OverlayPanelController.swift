@@ -15,6 +15,8 @@ final class OverlayPanelController {
     private var lastPanelOrigin: NSPoint?
     private var outsideClickMonitor: Any?
     private var localEventMonitor: Any?
+    private var actionRouter: ControllerActionRouter?
+    private var pendingControlEvent: Task<Void, Never>?
 
     init(contextMonitor: AppContextMonitor) {
         self.contextMonitor = contextMonitor
@@ -38,6 +40,7 @@ final class OverlayPanelController {
             editorState.draft = nil
             editorState.selectedControlID = nil
             editorState.isIterativePrompt = false
+            editorState.layoutDirty = false
         }
         if editorState.isGenerating,
            generationTargetBundleID != context?.application.bundleIdentifier {
@@ -56,11 +59,14 @@ final class OverlayPanelController {
         }
         panel.makeKeyAndOrderFront(nil)
 
-        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] _ in
             Task { @MainActor [weak self] in self?.close() }
         }
         localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
+            if editorState.capturingShortcutControlID != nil {
+                return event
+            }
             if event.keyCode == 53 {
                 self.close()
                 return nil
@@ -96,7 +102,7 @@ final class OverlayPanelController {
         panel.level = .floating
         panel.isFloatingPanel = true
         panel.isMovable = true
-        panel.isMovableByWindowBackground = true
+        panel.isMovableByWindowBackground = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -127,6 +133,9 @@ final class OverlayPanelController {
             },
             onWorkspaceExpansionChanged: { [weak self] expanded in
                 self?.setWorkspaceExpanded(expanded)
+            },
+            onApplyLayout: { [weak self] document in
+                self?.applyLayout(document)
             }
         ))
         return panel
@@ -178,19 +187,49 @@ final class OverlayPanelController {
             return
         }
         pairingHost.startSession(controller: controller)
-        if let application = context?.application,
-           let router = try? ControllerActionRouter(
-               document: controller,
-               application: application
-           ) {
-            pairingHost.onConnectionEnded = { router.deactivate() }
-            var pendingEvent: Task<Void, Never>?
-            pairingHost.onControlEvent = { [weak self] event in
-                let previous = pendingEvent
-                pendingEvent = Task { @MainActor [weak self] in
-                    await previous?.value
-                    await self?.route(event, using: router, context: context)
-                }
+        guard let application = context?.application,
+              let router = try? ControllerActionRouter(
+                  document: controller,
+                  application: application
+              ) else {
+            actionRouter = nil
+            return
+        }
+        installActionRouter(router, context: context)
+    }
+
+    private func applyLayout(_ document: ControllerDocument) -> String? {
+        do {
+            try pairingHost.publishController(document)
+            if let application = contextMonitor.capture()?.application,
+               application.bundleIdentifier == document.target.bundleIdentifier,
+               let router = try? ControllerActionRouter(
+                   document: document,
+                   application: application
+               ) {
+                installActionRouter(router, context: contextMonitor.capture())
+            }
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    private func installActionRouter(_ router: ControllerActionRouter, context: AppContext?) {
+        actionRouter?.deactivate()
+        actionRouter = router
+        pairingHost.onConnectionEnded = { [weak self] in
+            self?.actionRouter?.deactivate()
+            self?.actionRouter = nil
+            self?.pendingControlEvent = nil
+        }
+        pairingHost.onControlEvent = { [weak self] event in
+            guard let self else { return }
+            let previous = pendingControlEvent
+            pendingControlEvent = Task { @MainActor [weak self] in
+                await previous?.value
+                guard let self, let router = self.actionRouter else { return }
+                await self.route(event, using: router, context: context)
             }
         }
     }
@@ -281,6 +320,7 @@ final class OverlayPanelController {
             editorState.draft = document
             editorState.selectedControlID = document.layout.items.first?.controlID
             editorState.isIterativePrompt = true
+            editorState.layoutDirty = false
             editorState.generationError = nil
             editorState.prompt = ""
         } catch is CancellationError {
@@ -338,4 +378,32 @@ final class OverlayPanelController {
 
 private final class OverlayPanel: NSPanel {
     override var canBecomeKey: Bool { true }
+
+    private var windowDragMouseStart: NSPoint?
+    private var windowDragOriginStart: NSPoint?
+
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .rightMouseDown:
+            windowDragMouseStart = NSEvent.mouseLocation
+            windowDragOriginStart = frame.origin
+            return
+        case .rightMouseDragged:
+            if let mouseStart = windowDragMouseStart, let originStart = windowDragOriginStart {
+                let current = NSEvent.mouseLocation
+                setFrameOrigin(NSPoint(
+                    x: originStart.x + (current.x - mouseStart.x),
+                    y: originStart.y + (current.y - mouseStart.y)
+                ))
+            }
+            return
+        case .rightMouseUp:
+            windowDragMouseStart = nil
+            windowDragOriginStart = nil
+            return
+        default:
+            break
+        }
+        super.sendEvent(event)
+    }
 }

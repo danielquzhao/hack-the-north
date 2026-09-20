@@ -27,6 +27,8 @@ final class ControllerEditorState: ObservableObject {
     @Published var generationStatus: String?
     @Published var generationError: String?
     @Published var isIterativePrompt = false
+    @Published var layoutDirty = false
+    @Published var capturingShortcutControlID: String?
 }
 
 struct MacOverlayView: View {
@@ -42,6 +44,7 @@ struct MacOverlayView: View {
     let onStartPairing: (ControllerDocument) -> Void
     let onNextSlide: () -> Void
     let onWorkspaceExpansionChanged: (Bool) -> Void
+    let onApplyLayout: (ControllerDocument) -> String?
 
     @State private var permissionStatus = MacActionExecutor.permissionStatus
     @State private var showKeyboardHelp = false
@@ -57,7 +60,13 @@ struct MacOverlayView: View {
 
     private var selectedControlID: String? {
         get { editorState.selectedControlID }
-        nonmutating set { editorState.selectedControlID = newValue }
+        nonmutating set {
+            if editorState.capturingShortcutControlID != nil,
+               editorState.capturingShortcutControlID != newValue {
+                editorState.capturingShortcutControlID = nil
+            }
+            editorState.selectedControlID = newValue
+        }
     }
 
     private var isWorkspaceExpanded: Bool {
@@ -174,16 +183,6 @@ struct MacOverlayView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Close")
-
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    Text("esc to close")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-            }
         }
         .padding(24)
         .frame(width: isWorkspaceExpanded ? 1100 : 430, height: 760)
@@ -535,6 +534,10 @@ private extension MacOverlayView {
         }
     }
 
+    var canEditLayout: Bool {
+        !editorState.isGenerating && draft != nil
+    }
+
     var draftValidationError: String? {
         guard let draft else { return "Generate a controller before pairing." }
         do {
@@ -554,7 +557,7 @@ private extension MacOverlayView {
     ) {
         guard let draft else { return }
         let layouts = layout.map {
-            draft.layouts.replacing($0, for: draft.preferredOrientation)
+            draft.layouts.replacing($0, for: preferredOrientation ?? draft.preferredOrientation)
         } ?? draft.layouts
         self.draft = ControllerDocument(
             schemaVersion: draft.schemaVersion,
@@ -567,6 +570,48 @@ private extension MacOverlayView {
             controls: controls ?? draft.controls,
             bindings: bindings ?? draft.bindings
         )
+        editorState.layoutDirty = true
+    }
+
+    func updateFrame(_ id: String, _ frame: LayoutRect) {
+        guard let draft, canEditLayout else { return }
+        let obstacles = draft.layout.items
+            .filter { $0.controlID != id }
+            .map(\.frame)
+        let previous = draft.layout.items.first { $0.controlID == id }?.frame ?? frame
+        let resolved = LayoutEditing.resolvedOrPrevious(
+            frame,
+            previous: previous,
+            avoiding: obstacles
+        )
+        let items = draft.layout.items.map { item in
+            item.controlID == id
+                ? ControllerLayoutItem(controlID: id, frame: resolved)
+                : item
+        }
+        replaceDraft(layout: ControllerLayout(items: items))
+    }
+
+    func applyLayout() {
+        guard let draft, canEditLayout else { return }
+        let committed = ControllerDocument(
+            schemaVersion: draft.schemaVersion,
+            id: draft.id,
+            revision: draft.revision + 1,
+            name: draft.name,
+            target: draft.target,
+            preferredOrientation: draft.preferredOrientation,
+            layouts: draft.layouts,
+            controls: draft.controls,
+            bindings: draft.bindings
+        )
+        if let error = onApplyLayout(committed) {
+            editorState.generationError = error
+            return
+        }
+        self.draft = committed
+        editorState.layoutDirty = false
+        editorState.generationError = nil
     }
 
     var assetLibraryPlaceholder: some View {
@@ -629,7 +674,7 @@ private extension MacOverlayView {
                     VStack(alignment: .leading, spacing: 12) {
                         inspector(draft)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                            .disabled(!canEditDraft)
+                            .disabled(!canEditLayout)
 
                         if let draftValidationError {
                             Label(draftValidationError, systemImage: "exclamationmark.triangle")
@@ -669,7 +714,7 @@ private extension MacOverlayView {
                             width: draft.preferredOrientation == .portrait ? 320 : 600,
                             height: draft.preferredOrientation == .portrait ? 430 : 350
                         )
-                        .disabled(!canEditDraft)
+                        .disabled(!canEditLayout)
                 } else {
                     EmptyPhonePreview()
                         .frame(width: 600, height: 350)
@@ -684,6 +729,13 @@ private extension MacOverlayView {
                     orientationPicker(for: draft)
                 }
                 Spacer()
+                if editorState.layoutDirty {
+                    Button("Apply Layout") {
+                        applyLayout()
+                    }
+                    .buttonStyle(SolidGreyButtonStyle())
+                    .disabled(!canEditLayout)
+                }
             }
         }
         .frame(maxHeight: .infinity)
@@ -706,107 +758,73 @@ private extension MacOverlayView {
 
     func controllerPreview(_ draft: ControllerDocument) -> some View {
         GeometryReader { geometry in
-            let rows = previewRows(for: draft)
-            let spacing: CGFloat = 8
-            let units = rows.reduce(0) { $0 + $1.heightUnits }
-            let available = max(0, geometry.size.height - CGFloat(max(rows.count - 1, 0)) * spacing)
-            let contentHeight = max(available, CGFloat(units) * 54)
-
-            ScrollView {
-                Grid(horizontalSpacing: spacing, verticalSpacing: spacing) {
-                    ForEach(rows) { row in
-                        GridRow {
-                            ForEach(row.items) { item in
-                                if let control = draft.control(id: item.controlID) {
-                                    previewCell(control)
-                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                        .gridCellColumns(item.columnSpan)
-                                }
+            let size = geometry.size
+            ZStack(alignment: .topLeading) {
+                ForEach(draft.layout.items) { item in
+                    if let control = draft.control(id: item.controlID) {
+                        EditablePreviewControl(
+                            control: control,
+                            title: previewTitle(for: control),
+                            subtitle: previewSubtitle(for: control),
+                            frame: item.frame,
+                            canvasSize: size,
+                            obstacles: draft.layout.items
+                                .filter { $0.controlID != control.id }
+                                .map(\.frame),
+                            isSelected: selectedControlID == control.id,
+                            color: previewColor(for: control),
+                            onSelect: { selectedControlID = control.id },
+                            onChangeFrame: { frame in
+                                updateFrame(control.id, frame)
                             }
-                        }
-                        .frame(height: contentHeight * CGFloat(row.heightUnits) / CGFloat(max(units, 1)))
+                        )
                     }
                 }
-                .frame(maxWidth: .infinity)
             }
-            .scrollIndicators(.hidden)
+            .frame(width: size.width, height: size.height)
+            .coordinateSpace(name: "previewCanvas")
+            .clipped()
+            .contentShape(Rectangle())
+            .onTapGesture { selectedControlID = nil }
         }
         .padding(14)
         .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 22))
     }
 
-    func previewCell(_ control: ControlDefinition) -> some View {
-        Button {
-            selectedControlID = control.id
-        } label: {
-            VStack(spacing: 5) {
-                switch control.kind {
-                case .button(let configuration):
-                    if configuration.face != .standard {
-                        Text(configuration.face.rawValue.uppercased())
-                            .font(.title3.bold())
-                            .frame(width: 42, height: 42)
-                            .background(Circle().fill(previewColor(for: control)))
-                    } else {
-                        Image(systemName: "hand.tap.fill")
-                            .font(.title2)
-                    }
-                case .joystick:
-                    Image(systemName: "circle.circle.fill")
-                        .font(.system(size: 44))
-                case .motion:
-                    Image(systemName: "iphone.gen3.radiowaves.left.and.right")
-                        .font(.title2)
-                case .trackpad:
-                    Image(systemName: "hand.draw")
-                        .font(.title2)
-                case .pinchPad:
-                    Image(systemName: "plus.magnifyingglass")
-                        .font(.title2)
-                case .rotationPad:
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.title2)
-                }
-                Text(control.label)
-                    .font(.caption.weight(.medium))
-                    .lineLimit(2)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .foregroundStyle(.white)
-            .background(
-                previewColor(for: control).opacity(selectedControlID == control.id ? 0.65 : 0.25),
-                in: RoundedRectangle(cornerRadius: 12)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(selectedControlID == control.id ? .white : .clear, lineWidth: 2)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Edit \(control.label)")
-    }
-
     func previewColor(for control: ControlDefinition) -> Color {
         switch control.kind {
         case .button(let configuration):
-            switch configuration.face {
-            case .a: .green
-            case .b: .red
-            case .x: .blue
-            case .y: .orange
-            case .standard:
-                switch configuration.variant {
-                case .primary: .indigo
-                case .secondary: .gray
-                case .destructive: .red
-                }
-            }
+            Color(hex: configuration.tintHex) ?? .indigo
         case .joystick: .blue
         case .motion: .teal
         case .trackpad: .purple
         case .pinchPad: .orange
         case .rotationPad: .pink
         }
+    }
+
+    static func defaultTintHex(for face: ButtonFace, fallingBack: String) -> String {
+        switch face {
+        case .standard: fallingBack
+        case .a: "34C759"
+        case .b: "FF3B30"
+        case .x: "007AFF"
+        case .y: "FF9500"
+        }
+    }
+
+    func previewTitle(for control: ControlDefinition) -> String {
+        if case .button(let configuration) = control.kind, configuration.face != .standard {
+            return configuration.face.rawValue.uppercased()
+        }
+        return control.label
+    }
+
+    func previewSubtitle(for control: ControlDefinition) -> String? {
+        if case .button(let configuration) = control.kind, configuration.face != .standard {
+            return control.label
+        }
+        return nil
     }
 
     func inspector(_ draft: ControllerDocument) -> some View {
@@ -826,24 +844,13 @@ private extension MacOverlayView {
                     ))
                     .textFieldStyle(.roundedBorder)
 
-                    HStack {
-                        Button("Move earlier", systemImage: "arrow.up") { moveControl(id, by: -1) }
-                            .disabled(index == 0)
-                        Button("Move later", systemImage: "arrow.down") { moveControl(id, by: 1) }
-                            .disabled(index == draft.layout.items.count - 1)
-                    }
-                    .labelStyle(.iconOnly)
-                    .help("Change the control's position in the phone layout")
-
-                    Stepper("Width: \(draft.layout.items[index].columnSpan) column(s)", value: Binding(
-                        get: { self.draft?.layout.items.first(where: { $0.controlID == id })?.columnSpan ?? 1 },
-                        set: { updateSize(id, columns: $0) }
-                    ), in: 1...draft.layout.columns)
-
-                    Stepper("Height: \(draft.layout.items[index].rowSpan) unit(s)", value: Binding(
-                        get: { self.draft?.layout.items.first(where: { $0.controlID == id })?.rowSpan ?? 1 },
-                        set: { updateSize(id, rows: $0) }
-                    ), in: 1...SchemaValidator.maximumSpan)
+                    let frame = draft.layout.items[index].frame
+                    Text("Position \(Int(frame.x * 100))%, \(Int(frame.y * 100))%")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("Size \(Int(frame.width * 100))% × \(Int(frame.height * 100))%")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
                     if case .button(let configuration) = control.kind {
                         Picker("Face", selection: Binding(
@@ -854,7 +861,8 @@ private extension MacOverlayView {
                                         ButtonControlConfiguration(
                                             variant: configuration.variant,
                                             hapticsEnabled: configuration.hapticsEnabled,
-                                            face: face
+                                            face: face,
+                                            tintHex: Self.defaultTintHex(for: face, fallingBack: configuration.tintHex)
                                         )
                                     ))
                                 }
@@ -864,25 +872,37 @@ private extension MacOverlayView {
                                 Text(face == .standard ? "Standard" : face.rawValue.uppercased()).tag(face)
                             }
                         }
-                        if configuration.face == .standard {
-                            Picker("Style", selection: Binding(
-                                get: { currentButtonConfiguration(id)?.variant ?? .primary },
-                                set: { variant in
-                                    updateControl(id) { control in
-                                        ControlDefinition(id: control.id, label: control.label, kind: .button(
-                                            ButtonControlConfiguration(
-                                                variant: variant,
-                                                hapticsEnabled: configuration.hapticsEnabled,
-                                                face: configuration.face
+                        HStack {
+                            Text("Color")
+                            Spacer()
+                            ColorPicker(
+                                "Color",
+                                selection: Binding(
+                                    get: {
+                                        Color(hex: currentButtonConfiguration(id)?.tintHex
+                                              ?? configuration.tintHex) ?? .indigo
+                                    },
+                                    set: { color in
+                                        let hex = color.hexRGB
+                                            ?? configuration.tintHex
+                                        updateControl(id) { control in
+                                            guard case .button(let current) = control.kind else { return control }
+                                            return ControlDefinition(
+                                                id: control.id,
+                                                label: control.label,
+                                                kind: .button(ButtonControlConfiguration(
+                                                    variant: current.variant,
+                                                    hapticsEnabled: current.hapticsEnabled,
+                                                    face: current.face,
+                                                    tintHex: hex
+                                                ))
                                             )
-                                        ))
+                                        }
                                     }
-                                }
-                            )) {
-                                Text("Primary").tag(ButtonVariant.primary)
-                                Text("Secondary").tag(ButtonVariant.secondary)
-                                Text("Destructive").tag(ButtonVariant.destructive)
-                            }
+                                ),
+                                supportsOpacity: false
+                            )
+                            .labelsHidden()
                         }
                     }
 
@@ -1017,83 +1037,31 @@ private extension MacOverlayView {
     }
 
     func keyChordInspector(_ id: String, event: ControlEventKind? = nil) -> some View {
-        VStack(alignment: .leading) {
-            Picker("Key", selection: Binding(
-                get: { currentKey(id, event: event) },
-                set: { key in
-                    setAction(id, .keyChord(KeyChordAction(
-                        key: key,
-                        modifiers: currentModifiers(id, event: event)
-                    )), event: event)
+        let captureID = event.map { "\(id)::\($0.rawValue)" } ?? id
+        let chord = KeyChordAction(
+            key: currentKey(id, event: event),
+            modifiers: currentModifiers(id, event: event)
+        )
+        return ShortcutRecorderField(
+            chord: chord,
+            isRecording: editorState.capturingShortcutControlID == captureID,
+            onStartRecording: {
+                editorState.capturingShortcutControlID = captureID
+            },
+            onCancelRecording: {
+                if editorState.capturingShortcutControlID == captureID {
+                    editorState.capturingShortcutControlID = nil
                 }
-            )) {
-                ForEach(SemanticKey.allCases, id: \.self) { key in
-                    Text(key.rawValue).tag(key)
-                }
+            },
+            onCapture: { captured in
+                setAction(id, .keyChord(captured), event: event)
+                editorState.capturingShortcutControlID = nil
             }
-            ForEach(KeyModifier.allCases, id: \.self) { modifier in
-                Toggle(modifier.rawValue.capitalized, isOn: Binding(
-                    get: { currentModifiers(id, event: event).contains(modifier) },
-                    set: { enabled in
-                        var modifiers = currentModifiers(id, event: event).filter { $0 != modifier }
-                        if enabled { modifiers.append(modifier) }
-                        setAction(id, .keyChord(KeyChordAction(
-                            key: currentKey(id, event: event),
-                            modifiers: modifiers
-                        )), event: event)
-                    }
-                ))
-            }
-        }
-    }
-
-    func previewRows(for document: ControllerDocument) -> [PreviewRow] {
-        var rows: [[ControllerLayoutItem]] = []
-        var current: [ControllerLayoutItem] = []
-        var occupied = 0
-        for item in document.layout.items {
-            if occupied + item.columnSpan > document.layout.columns {
-                rows.append(current)
-                current = []
-                occupied = 0
-            }
-            current.append(item)
-            occupied += item.columnSpan
-            if occupied == document.layout.columns {
-                rows.append(current)
-                current = []
-                occupied = 0
-            }
-        }
-        if !current.isEmpty { rows.append(current) }
-        return rows.enumerated().map { PreviewRow(id: $0.offset, items: $0.element) }
-    }
-
-    func moveControl(_ id: String, by offset: Int) {
-        guard let draft,
-              let index = draft.layout.items.firstIndex(where: { $0.controlID == id }),
-              draft.layout.items.indices.contains(index + offset) else { return }
-        var items = draft.layout.items
-        items.swapAt(index, index + offset)
-        replaceDraft(layout: ControllerLayout(columns: draft.layout.columns, items: items))
-    }
-
-    func updateSize(_ id: String, columns: Int? = nil, rows: Int? = nil) {
-        guard let draft else { return }
-        let items = draft.layout.items.map { item in
-            item.controlID == id
-                ? ControllerLayoutItem(
-                    controlID: id,
-                    columnSpan: columns ?? item.columnSpan,
-                    rowSpan: rows ?? item.rowSpan
-                )
-                : item
-        }
-        replaceDraft(layout: ControllerLayout(columns: draft.layout.columns, items: items))
+        )
     }
 
     func updateControl(_ id: String, transform: (ControlDefinition) -> ControlDefinition) {
-        guard let draft else { return }
+        guard let draft, canEditLayout else { return }
         replaceDraft(controls: draft.controls.map { $0.id == id ? transform($0) : $0 })
     }
 
@@ -1105,7 +1073,7 @@ private extension MacOverlayView {
     }
 
     func setAction(_ id: String, _ action: ActionDefinition, event: ControlEventKind? = nil) {
-        guard let draft else { return }
+        guard let draft, canEditLayout else { return }
         replaceDraft(bindings: draft.bindings.map { binding in
             binding.controlID == id && (event == nil || binding.event == event)
                 ? ControlBinding(id: binding.id, controlID: id, event: binding.event, action: action)
@@ -1191,11 +1159,489 @@ private struct EmptyPhonePreview: View {
     }
 }
 
-private struct PreviewRow: Identifiable {
-    let id: Int
-    let items: [ControllerLayoutItem]
+private enum ResizeHandle: CaseIterable, Hashable {
+    case topLeft, top, topRight, left, right, bottomLeft, bottom, bottomRight
 
-    var heightUnits: Int {
-        max(items.map(\.rowSpan).max() ?? 1, 1)
+    var movesLeft: Bool {
+        switch self {
+        case .topLeft, .left, .bottomLeft: true
+        default: false
+        }
+    }
+
+    var movesRight: Bool {
+        switch self {
+        case .topRight, .right, .bottomRight: true
+        default: false
+        }
+    }
+
+    var movesTop: Bool {
+        switch self {
+        case .topLeft, .top, .topRight: true
+        default: false
+        }
+    }
+
+    var movesBottom: Bool {
+        switch self {
+        case .bottomLeft, .bottom, .bottomRight: true
+        default: false
+        }
+    }
+
+    var isCorner: Bool {
+        switch self {
+        case .topLeft, .topRight, .bottomLeft, .bottomRight: true
+        default: false
+        }
+    }
+}
+
+private enum LayoutEditing {
+    static let gap = 0.012
+    static let minimumSize = 0.08
+
+    static func overlaps(_ a: LayoutRect, _ b: LayoutRect, gap: Double = gap) -> Bool {
+        a.x < b.maxX + gap &&
+        a.maxX + gap > b.x &&
+        a.y < b.maxY + gap &&
+        a.maxY + gap > b.y
+    }
+
+    static func pixelRect(for frame: LayoutRect, in canvasSize: CGSize) -> CGRect {
+        let clamped = frame.clamped(minimumSize: minimumSize)
+        return CGRect(
+            x: clamped.x * canvasSize.width,
+            y: clamped.y * canvasSize.height,
+            width: clamped.width * canvasSize.width,
+            height: clamped.height * canvasSize.height
+        )
+    }
+
+    static func hitTestHandle(localPoint: CGPoint, size: CGSize) -> ResizeHandle? {
+        // Keep a real move target in the middle — edge band scales with control size.
+        let inset = min(10, max(5, min(size.width, size.height) * 0.18))
+        guard size.width > inset * 2.5, size.height > inset * 2.5 else {
+            // Tiny controls: corners only, so the center stays draggable.
+            let corner = inset * 1.2
+            let nearLeft = localPoint.x <= corner
+            let nearRight = localPoint.x >= size.width - corner
+            let nearTop = localPoint.y <= corner
+            let nearBottom = localPoint.y >= size.height - corner
+            switch (nearTop, nearBottom, nearLeft, nearRight) {
+            case (true, false, true, false): return .topLeft
+            case (true, false, false, true): return .topRight
+            case (false, true, true, false): return .bottomLeft
+            case (false, true, false, true): return .bottomRight
+            default: return nil
+            }
+        }
+
+        let nearLeft = localPoint.x <= inset
+        let nearRight = localPoint.x >= size.width - inset
+        let nearTop = localPoint.y <= inset
+        let nearBottom = localPoint.y >= size.height - inset
+
+        switch (nearTop, nearBottom, nearLeft, nearRight) {
+        case (true, false, true, false): return .topLeft
+        case (true, false, false, true): return .topRight
+        case (false, true, true, false): return .bottomLeft
+        case (false, true, false, true): return .bottomRight
+        case (true, false, false, false): return .top
+        case (false, true, false, false): return .bottom
+        case (false, false, true, false): return .left
+        case (false, false, false, true): return .right
+        default: return nil
+        }
+    }
+
+    static func resized(
+        from origin: LayoutRect,
+        handle: ResizeHandle,
+        dx: Double,
+        dy: Double
+    ) -> LayoutRect {
+        var x = origin.x
+        var y = origin.y
+        var width = origin.width
+        var height = origin.height
+
+        if handle.movesLeft {
+            x = origin.x + dx
+            width = origin.width - dx
+        } else if handle.movesRight {
+            width = origin.width + dx
+        }
+
+        if handle.movesTop {
+            y = origin.y + dy
+            height = origin.height - dy
+        } else if handle.movesBottom {
+            height = origin.height + dy
+        }
+
+        if width < minimumSize {
+            if handle.movesLeft {
+                x = origin.maxX - minimumSize
+            }
+            width = minimumSize
+        }
+        if height < minimumSize {
+            if handle.movesTop {
+                y = origin.maxY - minimumSize
+            }
+            height = minimumSize
+        }
+
+        if x < 0 {
+            if handle.movesLeft { width += x }
+            x = 0
+        }
+        if y < 0 {
+            if handle.movesTop { height += y }
+            y = 0
+        }
+        if x + width > 1 {
+            if handle.movesRight {
+                width = 1 - x
+            } else if handle.movesLeft {
+                x = 1 - width
+            } else {
+                width = 1 - x
+            }
+        }
+        if y + height > 1 {
+            if handle.movesBottom {
+                height = 1 - y
+            } else if handle.movesTop {
+                y = 1 - height
+            } else {
+                height = 1 - y
+            }
+        }
+
+        return LayoutRect(
+            x: x,
+            y: y,
+            width: max(minimumSize, min(1, width)),
+            height: max(minimumSize, min(1, height))
+        ).clamped(minimumSize: minimumSize)
+    }
+
+    /// Keeps `proposed` when clear; otherwise slides on one axis or stays put.
+    /// If already overlapping, allow free movement (still canvas-clamped) so controls can untangle.
+    static func resolvedOrPrevious(
+        _ proposed: LayoutRect,
+        previous: LayoutRect,
+        avoiding obstacles: [LayoutRect]
+    ) -> LayoutRect {
+        let clamped = proposed.clamped(minimumSize: minimumSize)
+        let previousOverlapping = obstacles.contains { overlaps(previous, $0) }
+        if previousOverlapping {
+            return clamped
+        }
+        if !obstacles.contains(where: { overlaps(clamped, $0) }) {
+            return clamped
+        }
+
+        let xOnly = LayoutRect(
+            x: proposed.x,
+            y: previous.y,
+            width: proposed.width,
+            height: previous.height
+        ).clamped(minimumSize: minimumSize)
+        if !obstacles.contains(where: { overlaps(xOnly, $0) }) {
+            return xOnly
+        }
+
+        let yOnly = LayoutRect(
+            x: previous.x,
+            y: proposed.y,
+            width: previous.width,
+            height: proposed.height
+        ).clamped(minimumSize: minimumSize)
+        if !obstacles.contains(where: { overlaps(yOnly, $0) }) {
+            return yOnly
+        }
+
+        return previous.clamped(minimumSize: minimumSize)
+    }
+}
+
+private struct EditablePreviewControl: View {
+    let control: ControlDefinition
+    let title: String
+    let subtitle: String?
+    let frame: LayoutRect
+    let canvasSize: CGSize
+    let obstacles: [LayoutRect]
+    let isSelected: Bool
+    let color: Color
+    let onSelect: () -> Void
+    let onChangeFrame: (LayoutRect) -> Void
+
+    @State private var liveFrame: LayoutRect?
+    @State private var gestureOrigin: LayoutRect?
+    @State private var activeHandle: ResizeHandle?
+
+    private var displayed: LayoutRect {
+        (liveFrame ?? frame).clamped(minimumSize: LayoutEditing.minimumSize)
+    }
+
+    private var pixelFrame: CGRect {
+        LayoutEditing.pixelRect(for: displayed, in: canvasSize)
+    }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(color.opacity(isSelected ? 0.95 : 0.82))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(
+                            .white.opacity(isSelected ? 0.95 : 0.25),
+                            lineWidth: isSelected ? 2 : 1
+                        )
+                }
+                .shadow(color: .black.opacity(0.25), radius: isSelected ? 8 : 3, y: 2)
+
+            VStack(spacing: 2) {
+                Text(title)
+                    .font(subtitle == nil
+                          ? .caption.weight(.semibold)
+                          : .title3.weight(.heavy))
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption2.weight(.medium))
+                        .opacity(0.85)
+                        .lineLimit(1)
+                }
+            }
+            .foregroundStyle(.white)
+            .multilineTextAlignment(.center)
+            .padding(8)
+            .minimumScaleFactor(0.55)
+            .lineLimit(2)
+            .allowsHitTesting(false)
+
+            if isSelected {
+                ForEach(ResizeHandle.allCases, id: \.self) { handle in
+                    handleView(handle)
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+        .frame(width: max(1, pixelFrame.width), height: max(1, pixelFrame.height))
+        .contentShape(Rectangle())
+        // `position` keeps hit-testing aligned with the drawn control (unlike `offset`).
+        .position(x: pixelFrame.midX, y: pixelFrame.midY)
+        .zIndex(isSelected ? 10 : 0)
+        .gesture(canvasDragGesture)
+        .onTapGesture(perform: onSelect)
+    }
+
+    @ViewBuilder
+    private func handleView(_ handle: ResizeHandle) -> some View {
+        let size: CGFloat = handle.isCorner ? 11 : 7
+        Circle()
+            .fill(.white)
+            .frame(width: size, height: size)
+            .overlay {
+                Circle()
+                    .strokeBorder(.black.opacity(0.22), lineWidth: 1)
+            }
+            .position(handlePosition(handle))
+    }
+
+    private func handlePosition(_ handle: ResizeHandle) -> CGPoint {
+        let width = max(1, pixelFrame.width)
+        let height = max(1, pixelFrame.height)
+        switch handle {
+        case .topLeft: return CGPoint(x: 0, y: 0)
+        case .top: return CGPoint(x: width / 2, y: 0)
+        case .topRight: return CGPoint(x: width, y: 0)
+        case .left: return CGPoint(x: 0, y: height / 2)
+        case .right: return CGPoint(x: width, y: height / 2)
+        case .bottomLeft: return CGPoint(x: 0, y: height)
+        case .bottom: return CGPoint(x: width / 2, y: height)
+        case .bottomRight: return CGPoint(x: width, y: height)
+        }
+    }
+
+    private var canvasDragGesture: some Gesture {
+        DragGesture(minimumDistance: 2, coordinateSpace: .named("previewCanvas"))
+            .onChanged { value in
+                if gestureOrigin == nil {
+                    onSelect()
+                    let origin = frame.clamped(minimumSize: LayoutEditing.minimumSize)
+                    gestureOrigin = origin
+                    liveFrame = origin
+                    let startRect = LayoutEditing.pixelRect(for: origin, in: canvasSize)
+                    let local = CGPoint(
+                        x: value.startLocation.x - startRect.minX,
+                        y: value.startLocation.y - startRect.minY
+                    )
+                    activeHandle = LayoutEditing.hitTestHandle(
+                        localPoint: local,
+                        size: startRect.size
+                    )
+                }
+
+                guard let origin = gestureOrigin,
+                      canvasSize.width > 0,
+                      canvasSize.height > 0 else { return }
+
+                let dx = (value.location.x - value.startLocation.x) / canvasSize.width
+                let dy = (value.location.y - value.startLocation.y) / canvasSize.height
+
+                let proposed: LayoutRect
+                if let handle = activeHandle {
+                    proposed = LayoutEditing.resized(from: origin, handle: handle, dx: dx, dy: dy)
+                } else {
+                    proposed = LayoutRect(
+                        x: origin.x + dx,
+                        y: origin.y + dy,
+                        width: origin.width,
+                        height: origin.height
+                    )
+                }
+
+                let next = LayoutEditing.resolvedOrPrevious(
+                    proposed,
+                    previous: liveFrame ?? origin,
+                    avoiding: obstacles
+                )
+                if liveFrame != next {
+                    liveFrame = next
+                    onChangeFrame(next)
+                }
+            }
+            .onEnded { _ in
+                if let liveFrame {
+                    onChangeFrame(liveFrame)
+                }
+                gestureOrigin = nil
+                liveFrame = nil
+                activeHandle = nil
+            }
+    }
+}
+
+private struct ShortcutRecorderField: View {
+    let chord: KeyChordAction
+    let isRecording: Bool
+    let onStartRecording: () -> Void
+    let onCancelRecording: () -> Void
+    let onCapture: (KeyChordAction) -> Void
+
+    @State private var monitor: Any?
+
+    var body: some View {
+        Button {
+            if isRecording {
+                stopMonitoring()
+                onCancelRecording()
+            } else {
+                onStartRecording()
+            }
+        } label: {
+            HStack {
+                Text(isRecording ? "Press shortcut…" : chord.displayString)
+                    .font(.body.monospaced())
+                    .foregroundStyle(isRecording ? .secondary : .primary)
+                Spacer()
+                Text(isRecording ? "Esc to cancel" : "Click to record")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .onChange(of: isRecording) { _, recording in
+            if recording {
+                startMonitoring()
+            } else {
+                stopMonitoring()
+            }
+        }
+        .onDisappear {
+            stopMonitoring()
+            if isRecording {
+                onCancelRecording()
+            }
+        }
+    }
+
+    private func startMonitoring() {
+        stopMonitoring()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // Pure modifier presses wait for a real key.
+            if Self.isModifierKeyCode(event.keyCode) {
+                return nil
+            }
+            // Esc alone cancels recording.
+            if event.keyCode == 53 && event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty {
+                stopMonitoring()
+                onCancelRecording()
+                return nil
+            }
+            guard let key = SemanticKey.from(keyCode: event.keyCode) else {
+                return nil
+            }
+            var modifiers: [KeyModifier] = []
+            let flags = event.modifierFlags
+            if flags.contains(.command) { modifiers.append(.command) }
+            if flags.contains(.shift) { modifiers.append(.shift) }
+            if flags.contains(.option) { modifiers.append(.option) }
+            if flags.contains(.control) { modifiers.append(.control) }
+            stopMonitoring()
+            onCapture(KeyChordAction(key: key, modifiers: modifiers))
+            return nil
+        }
+    }
+
+    private func stopMonitoring() {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+    }
+
+    private static func isModifierKeyCode(_ keyCode: UInt16) -> Bool {
+        // Shift, Control, Option, Command (left/right)
+        [54, 55, 56, 57, 58, 59, 60, 61, 62, 63].contains(keyCode)
+    }
+}
+
+private extension Color {
+    init?(hex: String) {
+        var cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.hasPrefix("#") { cleaned.removeFirst() }
+        guard cleaned.count == 6, let value = UInt32(cleaned, radix: 16) else { return nil }
+        let red = Double((value >> 16) & 0xFF) / 255
+        let green = Double((value >> 8) & 0xFF) / 255
+        let blue = Double(value & 0xFF) / 255
+        self = Color(.sRGB, red: red, green: green, blue: blue, opacity: 1)
+    }
+
+    var hexRGB: String? {
+        let nsColor = NSColor(self)
+        guard let rgb = nsColor.usingColorSpace(.deviceRGB) ?? nsColor.usingColorSpace(.sRGB) else {
+            return nil
+        }
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        rgb.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return String(
+            format: "%02X%02X%02X",
+            Int((red * 255).rounded()),
+            Int((green * 255).rounded()),
+            Int((blue * 255).rounded())
+        )
     }
 }
