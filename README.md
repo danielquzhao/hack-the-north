@@ -20,7 +20,9 @@ Generation uses the [OpenAI Responses API](https://developers.openai.com/api/doc
 
 The first screenshot requires **System Settings → Privacy & Security → Screen & System Audio Recording** permission for Universal Controller. Click **Generate Controller** to trigger macOS's permission request, grant access, then quit and reopen the Mac app before generating again. If more than one window from the captured app is open and the focused window cannot be identified, generation stops rather than sending an unrelated window.
 
-Choose **Presenter** for the original Next Slide button. Choose **Gamepad** to preview a thumbstick and A/B/X/Y button faces. The sample maps A to next slide, B to previous slide, X to black screen, Y to advance, and the thumbstick to pointer movement. **Phone tilt moves pointer** adds an optional motion control. The phone reads motion only while that control is visible; tap its card to recenter. These are built-in demo layouts; generating from a prompt creates a separate editable draft.
+Choose **Presenter** for a Next Slide button and swipe pad. Choose **Gamepad** to preview a thumbstick and A/B/X/Y button faces. The sample maps A to next slide, B to previous slide, X to black screen, Y to advance, and the thumbstick to pointer movement. **Phone tilt moves pointer** adds an optional motion control. The phone reads motion only while that control is visible; tap its card to recenter. Choose **Gestures** to try separate swipe, pinch, and rotation pads. These are built-in demo layouts; generating from a prompt creates a separate editable draft.
+
+Swipe left or up on the **Presenter** pad for the next slide and right or down for the previous slide. Pinch in/out and two-finger clockwise/counterclockwise rotation on the **Gestures** demo pads also send one action when each gesture ends. The Mac editor gives every direction its own keyboard mapping. AI can generate any of these pads from a request. Gestures are recognized only within their pads, so they do not interfere with buttons or the thumbstick. Rebuild both apps after this schema and pairing-protocol change before pairing again.
 
 On a physical iPhone:
 

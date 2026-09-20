@@ -51,7 +51,8 @@ final class ControllerActionRouter {
                 if !heldKeys.values.contains(held) {
                     MacActionExecutor.releaseKeyChord(held)
                 }
-            case .triggered:
+            case .triggered, .swipedLeft, .swipedRight, .swipedUp, .swipedDown,
+                 .pinchedIn, .pinchedOut, .rotatedClockwise, .rotatedCounterclockwise:
                 try await MacActionExecutor.sendKeyChord(action, to: application)
             case .changed:
                 return

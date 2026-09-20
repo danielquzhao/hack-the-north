@@ -36,6 +36,21 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
                 outputKind: .vector2,
                 events: [.changed]
             ),
+            ControlCapabilityDescriptor(
+                id: .swipePad,
+                outputKind: .none,
+                events: SwipeDirection.allCases.map(\.event)
+            ),
+            ControlCapabilityDescriptor(
+                id: .pinchPad,
+                outputKind: .none,
+                events: PinchDirection.allCases.map(\.event)
+            ),
+            ControlCapabilityDescriptor(
+                id: .rotationPad,
+                outputKind: .none,
+                events: RotationDirection.allCases.map(\.event)
+            ),
         ],
         actions: [
             ActionCapabilityDescriptor(
@@ -161,6 +176,25 @@ enum SchemaValidator {
                (!action.gain.isFinite || !(1...40).contains(action.gain) ||
                 !action.deadZone.isFinite || !(0...0.5).contains(action.deadZone)) {
                 throw error("Mouse movement gain or dead zone is out of range.")
+            }
+        }
+
+        for control in document.controls {
+            let requiredEvents: [ControlEventKind]
+            switch control.kind {
+            case .swipePad:
+                requiredEvents = SwipeDirection.allCases.map(\.event)
+            case .pinchPad:
+                requiredEvents = PinchDirection.allCases.map(\.event)
+            case .rotationPad:
+                requiredEvents = RotationDirection.allCases.map(\.event)
+            default:
+                continue
+            }
+            for event in requiredEvents {
+                guard document.binding(controlID: control.id, event: event) != nil else {
+                    throw error("Gesture control '\(control.id)' needs a \(event.rawValue) mapping.")
+                }
             }
         }
     }

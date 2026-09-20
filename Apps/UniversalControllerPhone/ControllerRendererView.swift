@@ -113,6 +113,27 @@ struct ControllerRendererView: View {
             TiltControlView(label: control.label, source: configuration.source) { value in
                 onEvent(control, .changed, .vector2(value))
             }
+        case .swipePad(let configuration):
+            SwipePadControlView(
+                label: control.label,
+                hapticsEnabled: configuration.hapticsEnabled
+            ) { direction in
+                onEvent(control, direction.event, .none)
+            }
+        case .pinchPad(let configuration):
+            PinchPadControlView(
+                label: control.label,
+                hapticsEnabled: configuration.hapticsEnabled
+            ) { direction in
+                onEvent(control, direction.event, .none)
+            }
+        case .rotationPad(let configuration):
+            RotationPadControlView(
+                label: control.label,
+                hapticsEnabled: configuration.hapticsEnabled
+            ) { direction in
+                onEvent(control, direction.event, .none)
+            }
         }
     }
 }
@@ -221,6 +242,128 @@ private struct ButtonControlView: View {
         guard isPressed else { return }
         isPressed = false
         onRelease()
+    }
+}
+
+private struct SwipePadControlView: View {
+    let label: String
+    let hapticsEnabled: Bool
+    let onSwipe: (SwipeDirection) -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "arrow.up")
+            HStack(spacing: 28) {
+                Image(systemName: "arrow.left")
+                Image(systemName: "hand.draw")
+                    .font(.title2)
+                Image(systemName: "arrow.right")
+            }
+            Image(systemName: "arrow.down")
+            Text(label)
+                .font(.subheadline.weight(.semibold))
+        }
+        .foregroundStyle(.white)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 16))
+        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 12)
+                .onEnded { gesture in
+                    let dx = gesture.translation.width
+                    let dy = gesture.translation.height
+                    let direction: SwipeDirection
+                    if abs(dx) >= 44, abs(dx) > abs(dy) * 1.2 {
+                        direction = dx < 0 ? .left : .right
+                    } else if abs(dy) >= 44, abs(dy) > abs(dx) * 1.2 {
+                        direction = dy < 0 ? .up : .down
+                    } else {
+                        return
+                    }
+                    if hapticsEnabled {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    }
+                    onSwipe(direction)
+                }
+        )
+        .accessibilityLabel("\(label) swipe pad")
+        .accessibilityHint("Swipe left, right, up, or down")
+    }
+}
+
+private struct PinchPadControlView: View {
+    let label: String
+    let hapticsEnabled: Bool
+    let onPinch: (PinchDirection) -> Void
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "plus.magnifyingglass")
+                .font(.title)
+            Text(label)
+                .font(.subheadline.weight(.semibold))
+            Text("Pinch in or out")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.7))
+        }
+        .foregroundStyle(.white)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 16))
+        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .highPriorityGesture(
+            MagnifyGesture()
+                .onEnded { gesture in
+                    let direction: PinchDirection
+                    if gesture.magnification <= 0.82 {
+                        direction = .inward
+                    } else if gesture.magnification >= 1.18 {
+                        direction = .outward
+                    } else {
+                        return
+                    }
+                    if hapticsEnabled {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    }
+                    onPinch(direction)
+                }
+        )
+        .accessibilityLabel("\(label) pinch pad")
+        .accessibilityHint("Pinch in or out with two fingers")
+    }
+}
+
+private struct RotationPadControlView: View {
+    let label: String
+    let hapticsEnabled: Bool
+    let onRotation: (RotationDirection) -> Void
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.title)
+            Text(label)
+                .font(.subheadline.weight(.semibold))
+            Text("Rotate two fingers")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.7))
+        }
+        .foregroundStyle(.white)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 16))
+        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .highPriorityGesture(
+            RotateGesture()
+                .onEnded { gesture in
+                    let degrees = gesture.rotation.degrees
+                    guard abs(degrees) >= 25 else { return }
+                    if hapticsEnabled {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    }
+                    onRotation(degrees > 0 ? .clockwise : .counterclockwise)
+                }
+        )
+        .accessibilityLabel("\(label) rotation pad")
+        .accessibilityHint("Rotate two fingers clockwise or counterclockwise")
     }
 }
 

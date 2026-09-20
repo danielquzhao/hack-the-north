@@ -195,6 +195,8 @@ final class OverlayPanelController {
             return makePresenterController(target: target)
         case .gamepad:
             return makeGamepadController(target: target, includeTilt: includeTilt)
+        case .gestures:
+            return makeGestureController(target: target)
         }
     }
 
@@ -334,6 +336,10 @@ final class OverlayPanelController {
                         controlID: "next-slide",
                         columnSpan: 1,
                         rowSpan: 1
+                    ), ControllerLayoutItem(
+                        controlID: "swipe-slides",
+                        columnSpan: 1,
+                        rowSpan: 2
                     )]
                 ),
                 landscape: ControllerLayout(
@@ -342,11 +348,16 @@ final class OverlayPanelController {
                         controlID: "next-slide",
                         columnSpan: 2,
                         rowSpan: 1
+                    ), ControllerLayoutItem(
+                        controlID: "swipe-slides",
+                        columnSpan: 2,
+                        rowSpan: 2
                     )]
                 )
                 ),
                 controls: [
                     .button(id: "next-slide", label: "Next Slide"),
+                    .swipePad(id: "swipe-slides", label: "Swipe Slides"),
                 ],
                 bindings: [
                     ControlBinding(
@@ -357,6 +368,30 @@ final class OverlayPanelController {
                             key: .rightArrow,
                             modifiers: []
                         ))
+                    ),
+                    ControlBinding(
+                        id: "swipe-left",
+                        controlID: "swipe-slides",
+                        event: .swipedLeft,
+                        action: .keyChord(KeyChordAction(key: .rightArrow, modifiers: []))
+                    ),
+                    ControlBinding(
+                        id: "swipe-right",
+                        controlID: "swipe-slides",
+                        event: .swipedRight,
+                        action: .keyChord(KeyChordAction(key: .leftArrow, modifiers: []))
+                    ),
+                    ControlBinding(
+                        id: "swipe-up",
+                        controlID: "swipe-slides",
+                        event: .swipedUp,
+                        action: .keyChord(KeyChordAction(key: .rightArrow, modifiers: []))
+                    ),
+                    ControlBinding(
+                        id: "swipe-down",
+                        controlID: "swipe-slides",
+                        event: .swipedDown,
+                        action: .keyChord(KeyChordAction(key: .leftArrow, modifiers: []))
                     ),
                 ]
             )
@@ -423,6 +458,68 @@ final class OverlayPanelController {
             layouts: ControllerLayouts(
                 portrait: ControllerLayout(columns: 2, items: portraitItems),
                 landscape: ControllerLayout(columns: 4, items: landscapeItems)
+            ),
+            controls: controls,
+            bindings: bindings
+        )
+    }
+
+    private func makeGestureController(target: ControllerTarget) -> ControllerDocument {
+        let controls: [ControlDefinition] = [
+            .swipePad(id: "swipe", label: "Swipe Slides"),
+            .pinchPad(id: "pinch", label: "Pinch Slides"),
+            .rotationPad(id: "rotate", label: "Rotate Slides"),
+        ]
+        let swipeKeys: [(SwipeDirection, SemanticKey)] = [
+            (.left, .rightArrow), (.right, .leftArrow),
+            (.up, .rightArrow), (.down, .leftArrow),
+        ]
+        let pinchKeys: [(PinchDirection, SemanticKey)] = [
+            (.inward, .leftArrow), (.outward, .rightArrow),
+        ]
+        let rotationKeys: [(RotationDirection, SemanticKey)] = [
+            (.clockwise, .rightArrow), (.counterclockwise, .leftArrow),
+        ]
+        let bindings = swipeKeys.map { direction, key in
+            ControlBinding(
+                id: "swipe-\(direction.rawValue)",
+                controlID: "swipe",
+                event: direction.event,
+                action: .keyChord(KeyChordAction(key: key, modifiers: []))
+            )
+        } + pinchKeys.map { direction, key in
+            ControlBinding(
+                id: "pinch-\(direction.rawValue)",
+                controlID: "pinch",
+                event: direction.event,
+                action: .keyChord(KeyChordAction(key: key, modifiers: []))
+            )
+        } + rotationKeys.map { direction, key in
+            ControlBinding(
+                id: "rotate-\(direction.rawValue)",
+                controlID: "rotate",
+                event: direction.event,
+                action: .keyChord(KeyChordAction(key: key, modifiers: []))
+            )
+        }
+        return ControllerDocument(
+            schemaVersion: ControllerDocument.currentSchemaVersion,
+            id: UUID(),
+            revision: 1,
+            name: "Keynote Gestures",
+            target: target,
+            preferredOrientation: .landscape,
+            layouts: ControllerLayouts(
+                portrait: ControllerLayout(columns: 2, items: [
+                    ControllerLayoutItem(controlID: "swipe", columnSpan: 2, rowSpan: 2),
+                    ControllerLayoutItem(controlID: "pinch", columnSpan: 1, rowSpan: 2),
+                    ControllerLayoutItem(controlID: "rotate", columnSpan: 1, rowSpan: 2),
+                ]),
+                landscape: ControllerLayout(columns: 3, items: [
+                    ControllerLayoutItem(controlID: "swipe", columnSpan: 1, rowSpan: 2),
+                    ControllerLayoutItem(controlID: "pinch", columnSpan: 1, rowSpan: 2),
+                    ControllerLayoutItem(controlID: "rotate", columnSpan: 1, rowSpan: 2),
+                ])
             ),
             controls: controls,
             bindings: bindings

@@ -1,7 +1,7 @@
 import Foundation
 
 struct ControllerDocument: Codable, Equatable, Sendable, Identifiable {
-    static let currentSchemaVersion = 2
+    static let currentSchemaVersion = 3
 
     let schemaVersion: Int
     let id: UUID
@@ -101,6 +101,9 @@ enum ControlCapabilityID: String, Codable, CaseIterable, Equatable, Sendable {
     case button
     case joystick
     case motion
+    case swipePad
+    case pinchPad
+    case rotationPad
 }
 
 struct ButtonControlConfiguration: Equatable, Sendable {
@@ -135,6 +138,54 @@ struct JoystickControlConfiguration: Codable, Equatable, Sendable {
     let hapticsEnabled: Bool
 }
 
+struct SwipePadControlConfiguration: Codable, Equatable, Sendable {
+    let hapticsEnabled: Bool
+}
+
+struct TwoFingerControlConfiguration: Codable, Equatable, Sendable {
+    let hapticsEnabled: Bool
+}
+
+enum SwipeDirection: String, Codable, CaseIterable, Hashable, Sendable {
+    case left
+    case right
+    case up
+    case down
+
+    var event: ControlEventKind {
+        switch self {
+        case .left: .swipedLeft
+        case .right: .swipedRight
+        case .up: .swipedUp
+        case .down: .swipedDown
+        }
+    }
+}
+
+enum PinchDirection: String, Codable, CaseIterable, Hashable, Sendable {
+    case inward
+    case outward
+
+    var event: ControlEventKind {
+        switch self {
+        case .inward: .pinchedIn
+        case .outward: .pinchedOut
+        }
+    }
+}
+
+enum RotationDirection: String, Codable, CaseIterable, Hashable, Sendable {
+    case clockwise
+    case counterclockwise
+
+    var event: ControlEventKind {
+        switch self {
+        case .clockwise: .rotatedClockwise
+        case .counterclockwise: .rotatedCounterclockwise
+        }
+    }
+}
+
 enum MotionSource: String, Codable, CaseIterable, Equatable, Sendable {
     case tilt
 }
@@ -147,10 +198,13 @@ enum ControlKind: Equatable, Sendable {
     case button(ButtonControlConfiguration)
     case joystick(JoystickControlConfiguration)
     case motion(MotionControlConfiguration)
+    case swipePad(SwipePadControlConfiguration)
+    case pinchPad(TwoFingerControlConfiguration)
+    case rotationPad(TwoFingerControlConfiguration)
 
     var outputKind: InputValueKind {
         switch self {
-        case .button:
+        case .button, .swipePad, .pinchPad, .rotationPad:
             .none
         case .joystick, .motion:
             .vector2
@@ -165,6 +219,12 @@ enum ControlKind: Equatable, Sendable {
             .joystick
         case .motion:
             .motion
+        case .swipePad:
+            .swipePad
+        case .pinchPad:
+            .pinchPad
+        case .rotationPad:
+            .rotationPad
         }
     }
 
@@ -174,6 +234,12 @@ enum ControlKind: Equatable, Sendable {
             [.triggered, .began, .ended]
         case .joystick, .motion:
             [.changed]
+        case .swipePad:
+            Set(SwipeDirection.allCases.map(\.event))
+        case .pinchPad:
+            Set(PinchDirection.allCases.map(\.event))
+        case .rotationPad:
+            Set(RotationDirection.allCases.map(\.event))
         }
     }
 }
@@ -216,6 +282,30 @@ struct ControlDefinition: Equatable, Sendable, Identifiable {
             kind: .motion(MotionControlConfiguration(source: .tilt))
         )
     }
+
+    static func swipePad(id: String, label: String) -> ControlDefinition {
+        ControlDefinition(
+            id: id,
+            label: label,
+            kind: .swipePad(SwipePadControlConfiguration(hapticsEnabled: true))
+        )
+    }
+
+    static func pinchPad(id: String, label: String) -> ControlDefinition {
+        ControlDefinition(
+            id: id,
+            label: label,
+            kind: .pinchPad(TwoFingerControlConfiguration(hapticsEnabled: true))
+        )
+    }
+
+    static func rotationPad(id: String, label: String) -> ControlDefinition {
+        ControlDefinition(
+            id: id,
+            label: label,
+            kind: .rotationPad(TwoFingerControlConfiguration(hapticsEnabled: true))
+        )
+    }
 }
 
 extension ControlDefinition: Codable {
@@ -247,6 +337,21 @@ extension ControlDefinition: Codable {
                 MotionControlConfiguration.self,
                 forKey: .configuration
             ))
+        case .swipePad:
+            kind = .swipePad(try container.decode(
+                SwipePadControlConfiguration.self,
+                forKey: .configuration
+            ))
+        case .pinchPad:
+            kind = .pinchPad(try container.decode(
+                TwoFingerControlConfiguration.self,
+                forKey: .configuration
+            ))
+        case .rotationPad:
+            kind = .rotationPad(try container.decode(
+                TwoFingerControlConfiguration.self,
+                forKey: .configuration
+            ))
         }
     }
 
@@ -265,6 +370,15 @@ extension ControlDefinition: Codable {
         case .motion(let configuration):
             try container.encode(ControlCapabilityID.motion, forKey: .type)
             try container.encode(configuration, forKey: .configuration)
+        case .swipePad(let configuration):
+            try container.encode(ControlCapabilityID.swipePad, forKey: .type)
+            try container.encode(configuration, forKey: .configuration)
+        case .pinchPad(let configuration):
+            try container.encode(ControlCapabilityID.pinchPad, forKey: .type)
+            try container.encode(configuration, forKey: .configuration)
+        case .rotationPad(let configuration):
+            try container.encode(ControlCapabilityID.rotationPad, forKey: .type)
+            try container.encode(configuration, forKey: .configuration)
         }
     }
 }
@@ -274,6 +388,14 @@ enum ControlEventKind: String, Codable, Equatable, Hashable, Sendable {
     case began
     case changed
     case ended
+    case swipedLeft
+    case swipedRight
+    case swipedUp
+    case swipedDown
+    case pinchedIn
+    case pinchedOut
+    case rotatedClockwise
+    case rotatedCounterclockwise
 }
 
 enum InputValueKind: String, Codable, Equatable, Sendable {

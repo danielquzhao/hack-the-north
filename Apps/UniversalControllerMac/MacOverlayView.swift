@@ -4,6 +4,7 @@ import SwiftUI
 enum DemoControllerStyle: String, CaseIterable, Identifiable {
     case presenter = "Presenter"
     case gamepad = "Gamepad"
+    case gestures = "Gestures"
 
     var id: Self { self }
 }
@@ -526,6 +527,22 @@ private extension MacOverlayView {
                 .disabled(!canGenerate)
             }
 
+            HStack(spacing: 10) {
+                Picker("Demo layout", selection: $editorState.demoStyle) {
+                    ForEach(DemoControllerStyle.allCases) { style in
+                        Text(style.rawValue).tag(style)
+                    }
+                }
+                Button("Use Demo") { makeDraft() }
+                    .disabled(!canEditDraft || context.map {
+                        MacActionExecutor.isKeynote($0.application)
+                    } != true)
+            }
+            if demoStyle == .gamepad {
+                Toggle("Phone tilt moves pointer", isOn: $editorState.includeTilt)
+                    .disabled(!canEditDraft)
+            }
+
             if let message = editorState.generationError {
                 Text(message)
                     .font(.caption)
@@ -791,6 +808,15 @@ private extension MacOverlayView {
                 case .motion:
                     Image(systemName: "iphone.gen3.radiowaves.left.and.right")
                         .font(.title2)
+                case .swipePad:
+                    Image(systemName: "hand.draw")
+                        .font(.title2)
+                case .pinchPad:
+                    Image(systemName: "plus.magnifyingglass")
+                        .font(.title2)
+                case .rotationPad:
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.title2)
                 }
                 Text(control.label)
                     .font(.caption.weight(.medium))
@@ -828,6 +854,9 @@ private extension MacOverlayView {
             }
         case .joystick: .blue
         case .motion: .teal
+        case .swipePad: .purple
+        case .pinchPad: .orange
+        case .rotationPad: .pink
         }
     }
 
@@ -927,27 +956,37 @@ private extension MacOverlayView {
 
     @ViewBuilder
     func actionInspector(_ id: String) -> some View {
-        if let action = draft?.bindings.first(where: { $0.controlID == id })?.action {
+        if let control = draft?.control(id: id), case .swipePad = control.kind {
+            ForEach(SwipeDirection.allCases, id: \.self) { direction in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Swipe \(direction.rawValue.capitalized)")
+                        .font(.subheadline.weight(.semibold))
+                    keyChordInspector(id, event: direction.event)
+                }
+                .padding(.vertical, 4)
+            }
+        } else if let control = draft?.control(id: id), case .pinchPad = control.kind {
+            ForEach(PinchDirection.allCases, id: \.self) { direction in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(direction == .inward ? "Pinch In" : "Pinch Out")
+                        .font(.subheadline.weight(.semibold))
+                    keyChordInspector(id, event: direction.event)
+                }
+                .padding(.vertical, 4)
+            }
+        } else if let control = draft?.control(id: id), case .rotationPad = control.kind {
+            ForEach(RotationDirection.allCases, id: \.self) { direction in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(direction == .clockwise ? "Rotate Clockwise" : "Rotate Counterclockwise")
+                        .font(.subheadline.weight(.semibold))
+                    keyChordInspector(id, event: direction.event)
+                }
+                .padding(.vertical, 4)
+            }
+        } else if let action = draft?.bindings.first(where: { $0.controlID == id })?.action {
             switch action {
             case .keyChord:
-                Picker("Key", selection: Binding(
-                    get: { currentKey(id) },
-                    set: { key in setAction(id, .keyChord(KeyChordAction(key: key, modifiers: currentModifiers(id)))) }
-                )) {
-                    ForEach(SemanticKey.allCases, id: \.self) { key in
-                        Text(key.rawValue).tag(key)
-                    }
-                }
-                ForEach(KeyModifier.allCases, id: \.self) { modifier in
-                    Toggle(modifier.rawValue.capitalized, isOn: Binding(
-                        get: { currentModifiers(id).contains(modifier) },
-                        set: { enabled in
-                            var modifiers = currentModifiers(id).filter { $0 != modifier }
-                            if enabled { modifiers.append(modifier) }
-                            setAction(id, .keyChord(KeyChordAction(key: currentKey(id), modifiers: modifiers)))
-                        }
-                    ))
-                }
+                keyChordInspector(id)
             case .mouseMove:
                 Text("Move the Mac pointer")
                     .font(.subheadline)
@@ -962,6 +1001,37 @@ private extension MacOverlayView {
                         set: { setAction(id, .mouseMove(MouseMoveAction(gain: currentMouseMove(id).gain, deadZone: $0))) }
                     ), in: 0...0.5)
                 }
+            }
+        }
+    }
+
+    func keyChordInspector(_ id: String, event: ControlEventKind? = nil) -> some View {
+        VStack(alignment: .leading) {
+            Picker("Key", selection: Binding(
+                get: { currentKey(id, event: event) },
+                set: { key in
+                    setAction(id, .keyChord(KeyChordAction(
+                        key: key,
+                        modifiers: currentModifiers(id, event: event)
+                    )), event: event)
+                }
+            )) {
+                ForEach(SemanticKey.allCases, id: \.self) { key in
+                    Text(key.rawValue).tag(key)
+                }
+            }
+            ForEach(KeyModifier.allCases, id: \.self) { modifier in
+                Toggle(modifier.rawValue.capitalized, isOn: Binding(
+                    get: { currentModifiers(id, event: event).contains(modifier) },
+                    set: { enabled in
+                        var modifiers = currentModifiers(id, event: event).filter { $0 != modifier }
+                        if enabled { modifiers.append(modifier) }
+                        setAction(id, .keyChord(KeyChordAction(
+                            key: currentKey(id, event: event),
+                            modifiers: modifiers
+                        )), event: event)
+                    }
+                ))
             }
         }
     }
@@ -1023,23 +1093,27 @@ private extension MacOverlayView {
         return configuration
     }
 
-    func setAction(_ id: String, _ action: ActionDefinition) {
+    func setAction(_ id: String, _ action: ActionDefinition, event: ControlEventKind? = nil) {
         guard let draft else { return }
         replaceDraft(bindings: draft.bindings.map { binding in
-            binding.controlID == id
+            binding.controlID == id && (event == nil || binding.event == event)
                 ? ControlBinding(id: binding.id, controlID: id, event: binding.event, action: action)
                 : binding
         })
     }
 
-    func currentKey(_ id: String) -> SemanticKey {
-        guard let binding = draft?.bindings.first(where: { $0.controlID == id }),
+    func currentKey(_ id: String, event: ControlEventKind? = nil) -> SemanticKey {
+        guard let binding = draft?.bindings.first(where: {
+            $0.controlID == id && (event == nil || $0.event == event)
+        }),
               case .keyChord(let action) = binding.action else { return .rightArrow }
         return action.key
     }
 
-    func currentModifiers(_ id: String) -> [KeyModifier] {
-        guard let binding = draft?.bindings.first(where: { $0.controlID == id }),
+    func currentModifiers(_ id: String, event: ControlEventKind? = nil) -> [KeyModifier] {
+        guard let binding = draft?.bindings.first(where: {
+            $0.controlID == id && (event == nil || $0.event == event)
+        }),
               case .keyChord(let action) = binding.action else { return [] }
         return action.modifiers
     }
