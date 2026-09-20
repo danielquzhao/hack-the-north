@@ -19,7 +19,8 @@ private enum EditorToolTab: String, CaseIterable, Identifiable {
 
 @MainActor
 final class ControllerEditorState: ObservableObject {
-    @Published var draft: ControllerDocument?
+    @Published var sessionPack: ControllerSessionPack?
+    @Published var selectedSeatIndex = 0
     @Published var selectedControlID: String?
     @Published var prompt = ""
     @Published var hasAPIKey = OpenAIAPIKeyStore.load() != nil
@@ -30,6 +31,43 @@ final class ControllerEditorState: ObservableObject {
     @Published var layoutDirty = false
     @Published var capturingShortcutControlID: String?
     @Published var assetDropTargeted = false
+    /// How many phone seats to generate. 1 = solo, 2 = local co-op with distinct mappings.
+    @Published var playerCount = 1
+
+    var draft: ControllerDocument? {
+        get { sessionPack?.controller(at: selectedSeatIndex) }
+        set {
+            if let newValue {
+                if var pack = sessionPack {
+                    let index = pack.seat(at: selectedSeatIndex) == nil ? 0 : selectedSeatIndex
+                    pack.setController(newValue, at: index)
+                    sessionPack = pack
+                    selectedSeatIndex = index
+                } else {
+                    sessionPack = .single(newValue)
+                    selectedSeatIndex = 0
+                }
+            } else {
+                sessionPack = nil
+                selectedSeatIndex = 0
+            }
+        }
+    }
+
+    func loadGenerated(_ pack: ControllerSessionPack) {
+        sessionPack = pack
+        playerCount = min(2, max(1, pack.seatCount))
+        selectedSeatIndex = 0
+        selectedControlID = pack.primaryController.layout.items.first?.controlID
+        isIterativePrompt = true
+        layoutDirty = false
+        generationError = nil
+        prompt = ""
+    }
+
+    func loadGenerated(_ document: ControllerDocument) {
+        loadGenerated(.single(document))
+    }
 }
 
 struct MacOverlayView: View {
@@ -42,10 +80,10 @@ struct MacOverlayView: View {
     let onGenerate: (String) -> Void
     let onSaveAPIKey: (String) -> String?
     let onRemoveAPIKey: () -> Void
-    let onStartPairing: (ControllerDocument) -> Void
+    let onStartPairing: (ControllerSessionPack) -> Void
     let onNextSlide: () -> Void
     let onWorkspaceExpansionChanged: (Bool) -> Void
-    let onApplyLayout: (ControllerDocument) -> String?
+    let onApplyLayout: (ControllerSessionPack) -> String?
 
     @State private var permissionStatus = MacActionExecutor.permissionStatus
     @State private var showKeyboardHelp = false
@@ -353,32 +391,41 @@ struct MacOverlayView: View {
     private var pairingToolbarControl: some View {
         switch pairingHost.state {
         case .idle, .failed:
-            Button("Pair iPhone") {
+            Button(editorState.sessionPack?.seatCount ?? 0 > 1 ? "Pair iPhones" : "Pair iPhone") {
                 startPairing()
             }
             .buttonStyle(SolidGreyButtonStyle())
             .disabled(draftValidationError != nil || editorState.isGenerating)
-        case .starting, .waiting, .authenticating:
-            Label("Pairing iPhone", systemImage: "iphone.radiowaves.left.and.right")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        case .connected:
-            Label("iPhone connected", systemImage: "checkmark.circle.fill")
-                .font(.subheadline)
-                .foregroundStyle(.green)
+        case .starting, .advertising, .authenticating:
+            Label(
+                pairingHost.seatCount > 1
+                    ? "Pairing \(pairingHost.filledSeatCount)/\(pairingHost.seatCount)"
+                    : "Pairing iPhone",
+                systemImage: "iphone.radiowaves.left.and.right"
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        case .full:
+            Label(
+                pairingHost.peers.count == 1
+                    ? "iPhone connected"
+                    : "\(pairingHost.peers.count) iPhones connected",
+                systemImage: "checkmark.circle.fill"
+            )
+            .font(.subheadline)
+            .foregroundStyle(.green)
         }
     }
 
     private func startPairing() {
-        if let draft, draftValidationError == nil {
-            onStartPairing(draft)
-        }
+        guard let pack = editorState.sessionPack, draftValidationError == nil else { return }
+        onStartPairing(pack)
     }
 
     @ViewBuilder
     private var pairingSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("IPHONE")
+            Text(editorState.sessionPack?.seatCount ?? 0 > 1 ? "IPHONES" : "IPHONE")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
@@ -395,7 +442,7 @@ struct MacOverlayView: View {
                 }
                 .padding(14)
 
-            case .waiting, .authenticating:
+            case .advertising, .authenticating:
                 HStack(alignment: .top, spacing: 20) {
                     if let payload = pairingHost.descriptor?.qrPayload {
                         PairingQRCodeView(payload: payload)
@@ -407,10 +454,19 @@ struct MacOverlayView: View {
                         } else {
                             Text("Scan with Universal Controller")
                                 .font(.headline)
-                            Text("Open the iPhone app, tap Scan Mac QR, and point it at this code.")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                            Text(
+                                pairingHost.seatCount > 1
+                                    ? "One QR for every player. First phone is Seat 1, next is Seat 2, and so on."
+                                    : "Open the iPhone app, tap Scan Mac QR, and point it at this code."
+                            )
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                         }
+                        if pairingHost.seatCount > 1 {
+                            Text("Seats filled \(pairingHost.filledSeatCount)/\(pairingHost.seatCount)")
+                                .font(.caption.weight(.semibold))
+                        }
+                        peerList
                         if let expiresAt = pairingHost.descriptor?.expiresAt {
                             Text("Expires \(expiresAt, style: .relative)")
                                 .font(.caption)
@@ -421,27 +477,29 @@ struct MacOverlayView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-            case .connected(let deviceName):
-                HStack(spacing: 12) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.green)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Connected to \(deviceName)")
+            case .full:
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(
+                                pairingHost.peers.count == 1
+                                    ? "Connected to \(pairingHost.peers.first?.deviceName ?? "iPhone")"
+                                    : "\(pairingHost.peers.count) phones connected"
+                            )
                             .font(.headline)
-                        Text(pairingHost.lastPingAt == nil
-                            ? "Waiting for connection test…"
-                            : "Bidirectional connection verified")
+                            Text(pairingHost.lastPingAt == nil
+                                ? "Waiting for connection test…"
+                                : "Bidirectional connection verified")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        if let controller = pairingHost.controller {
-                            Text("\(controller.name) is ready on your iPhone")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
+                        Spacer()
+                        Button("Disconnect") { pairingHost.stopSession() }
                     }
-                    Spacer()
-                    Button("Disconnect") { pairingHost.stopSession() }
+                    peerList
                 }
                 .padding(14)
                 .background(.green.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
@@ -459,6 +517,24 @@ struct MacOverlayView: View {
             }
         }
     }
+
+    @ViewBuilder
+    private var peerList: some View {
+        if !pairingHost.peers.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(pairingHost.peers) { peer in
+                    let seatLabel = editorState.sessionPack?.seat(at: peer.seatIndex)?.label
+                        ?? peer.seatLabel
+                    Label(
+                        "\(seatLabel) · \(peer.deviceName)",
+                        systemImage: "iphone"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
 }
 
 private extension MacOverlayView {
@@ -467,6 +543,22 @@ private extension MacOverlayView {
             Text("YOUR CONTROLLER")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
+
+            Picker("Players", selection: $editorState.playerCount) {
+                Text("1").tag(1)
+                Text("2").tag(2)
+            }
+            .pickerStyle(.segmented)
+            .disabled(!canEditDraft)
+            .accessibilityLabel("Players")
+
+            Text(
+                editorState.playerCount == 2
+                    ? "Two phones share one layout. AI maps Player 1 and Player 2 to different keys."
+                    : "One phone controller for the Mac app."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
 
             TextField(
                 generationPlaceholder,
@@ -510,9 +602,13 @@ private extension MacOverlayView {
     }
 
     var generationPlaceholder: String {
-        editorState.isIterativePrompt
-            ? "Try “Add another button” or “Make Next larger”"
-            : "For example: Next, Previous, and Blackout buttons"
+        if editorState.isIterativePrompt {
+            return "Try “Add another button” or “Make Next larger”"
+        }
+        if editorState.playerCount == 2 {
+            return "For example: local co-op movement — P1 WASD, P2 arrows"
+        }
+        return "For example: Next, Previous, and Blackout buttons"
     }
 
     var canGenerate: Bool {
@@ -529,10 +625,7 @@ private extension MacOverlayView {
 
     var canEditDraft: Bool {
         guard !editorState.isGenerating else { return false }
-        return switch pairingHost.state {
-        case .idle, .failed: true
-        case .starting, .waiting, .authenticating, .connected: false
-        }
+        return !pairingHost.state.isSessionActive
     }
 
     var canEditLayout: Bool {
@@ -540,9 +633,11 @@ private extension MacOverlayView {
     }
 
     var draftValidationError: String? {
-        guard let draft else { return "Generate a controller before pairing." }
+        guard let pack = editorState.sessionPack else {
+            return "Generate a controller before pairing."
+        }
         do {
-            try SchemaValidator.validate(draft)
+            try SchemaValidator.validate(pack)
             return nil
         } catch {
             return error.localizedDescription
@@ -556,21 +651,29 @@ private extension MacOverlayView {
         controls: [ControlDefinition]? = nil,
         bindings: [ControlBinding]? = nil
     ) {
-        guard let draft else { return }
+        guard var pack = editorState.sessionPack,
+              let draft = pack.controller(at: editorState.selectedSeatIndex) else { return }
         let layouts = layout.map {
             draft.layouts.replacing($0, for: preferredOrientation ?? draft.preferredOrientation)
-        } ?? draft.layouts
-        self.draft = ControllerDocument(
-            schemaVersion: draft.schemaVersion,
-            id: draft.id,
-            revision: draft.revision,
-            name: name ?? draft.name,
-            target: draft.target,
-            preferredOrientation: preferredOrientation ?? draft.preferredOrientation,
-            layouts: layouts,
-            controls: controls ?? draft.controls,
-            bindings: bindings ?? draft.bindings
-        )
+        }
+
+        let chromeChanged = name != nil
+            || preferredOrientation != nil
+            || layout != nil
+            || controls != nil
+        if chromeChanged {
+            pack.updateSharedChrome(
+                name: name,
+                preferredOrientation: preferredOrientation,
+                layouts: layouts ?? draft.layouts,
+                controls: controls
+            )
+        }
+        if let bindings {
+            pack.updateBindings(bindings, at: editorState.selectedSeatIndex)
+        }
+        guard chromeChanged || bindings != nil else { return }
+        editorState.sessionPack = pack
         editorState.layoutDirty = true
     }
 
@@ -605,25 +708,75 @@ private extension MacOverlayView {
     }
 
     func applyLayout() {
-        guard let draft, canEditLayout else { return }
-        let committed = ControllerDocument(
-            schemaVersion: draft.schemaVersion,
-            id: draft.id,
-            revision: draft.revision + 1,
-            name: draft.name,
-            target: draft.target,
-            preferredOrientation: draft.preferredOrientation,
-            layouts: draft.layouts,
-            controls: draft.controls,
-            bindings: draft.bindings
-        )
-        if let error = onApplyLayout(committed) {
+        guard var pack = editorState.sessionPack, canEditLayout,
+              let draft = pack.controller(at: editorState.selectedSeatIndex) else { return }
+        pack.updateSharedChrome(revision: draft.revision + 1)
+        if let error = onApplyLayout(pack) {
             editorState.generationError = error
             return
         }
-        self.draft = committed
+        editorState.sessionPack = pack
         editorState.layoutDirty = false
         editorState.generationError = nil
+    }
+
+    func addPlayerSeat() {
+        guard var pack = editorState.sessionPack, canEditLayout else { return }
+        do {
+            let index = try pack.addSeat(copyingBindingsFrom: editorState.selectedSeatIndex)
+            editorState.sessionPack = pack
+            editorState.selectedSeatIndex = index
+            editorState.layoutDirty = true
+        } catch {
+            editorState.generationError = error.localizedDescription
+        }
+    }
+
+    func removeSelectedSeat() {
+        guard var pack = editorState.sessionPack, canEditLayout else { return }
+        do {
+            try pack.removeSeat(at: editorState.selectedSeatIndex)
+            editorState.sessionPack = pack
+            editorState.selectedSeatIndex = min(
+                editorState.selectedSeatIndex,
+                max(0, pack.seatCount - 1)
+            )
+            editorState.layoutDirty = true
+        } catch {
+            editorState.generationError = error.localizedDescription
+        }
+    }
+
+    var seatSwitcher: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("SEATS")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            if let pack = editorState.sessionPack {
+                Picker("Seat", selection: $editorState.selectedSeatIndex) {
+                    ForEach(pack.seats) { seat in
+                        Text(seat.label).tag(seat.index)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(pack.seatCount < 2)
+
+                Text("Layout is shared. Action mappings below apply to \(pack.seat(at: editorState.selectedSeatIndex)?.label ?? "this seat").")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    Button("Add seat") { addPlayerSeat() }
+                        .disabled(!canEditLayout || pack.seatCount >= ControllerSessionPack.maximumSeats)
+                    if pack.seatCount > 1 {
+                        Button("Remove seat", role: .destructive) { removeSelectedSeat() }
+                            .disabled(!canEditLayout || pairingHost.state.isSessionActive)
+                    }
+                    Spacer()
+                }
+                .font(.caption)
+            }
+        }
     }
 
     var assetLibraryPlaceholder: some View {
@@ -814,6 +967,8 @@ private extension MacOverlayView {
             case .controls:
                 if let draft {
                     VStack(alignment: .leading, spacing: 12) {
+                        seatSwitcher
+                        Divider()
                         inspector(draft)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                             .disabled(!canEditLayout)
@@ -1101,7 +1256,7 @@ private extension MacOverlayView {
                     }
 
                     Divider()
-                    Text("ACTION")
+                    Text("ACTION · \(editorState.sessionPack?.seat(at: editorState.selectedSeatIndex)?.label ?? "Seat")")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     actionInspector(id)

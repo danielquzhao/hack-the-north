@@ -15,7 +15,7 @@ final class OverlayPanelController {
     private var lastPanelOrigin: NSPoint?
     private var outsideClickMonitor: Any?
     private var localEventMonitor: Any?
-    private var actionRouter: ControllerActionRouter?
+    private var actionRouters: [Int: ControllerActionRouter] = [:]
     private var pendingControlEvent: Task<Void, Never>?
 
     init(contextMonitor: AppContextMonitor) {
@@ -36,8 +36,9 @@ final class OverlayPanelController {
     }
 
     private func open(context: AppContext?, errorMessage: String?) {
-        if editorState.draft?.target.bundleIdentifier != context?.application.bundleIdentifier {
-            editorState.draft = nil
+        if editorState.sessionPack?.target.bundleIdentifier != context?.application.bundleIdentifier {
+            editorState.sessionPack = nil
+            editorState.selectedSeatIndex = 0
             editorState.selectedControlID = nil
             editorState.isIterativePrompt = false
             editorState.layoutDirty = false
@@ -123,8 +124,8 @@ final class OverlayPanelController {
             onRemoveAPIKey: { [weak self] in
                 self?.removeAPIKey()
             },
-            onStartPairing: { [weak self] controller in
-                self?.startPairing(context: context, controller: controller)
+            onStartPairing: { [weak self] pack in
+                self?.startPairing(context: context, pack: pack)
             },
             onNextSlide: { [weak self] in
                 Task { @MainActor [weak self] in
@@ -134,8 +135,8 @@ final class OverlayPanelController {
             onWorkspaceExpansionChanged: { [weak self] expanded in
                 self?.setWorkspaceExpanded(expanded)
             },
-            onApplyLayout: { [weak self] document in
-                self?.applyLayout(document)
+            onApplyLayout: { [weak self] pack in
+                self?.applyLayout(pack)
             }
         ))
         return panel
@@ -181,33 +182,29 @@ final class OverlayPanelController {
         }
     }
 
-    private func startPairing(context: AppContext?, controller: ControllerDocument) {
+    private func startPairing(context: AppContext?, pack: ControllerSessionPack) {
         guard !editorState.isGenerating,
-              context?.application.bundleIdentifier == controller.target.bundleIdentifier else {
+              context?.application.bundleIdentifier == pack.target.bundleIdentifier else {
             return
         }
-        pairingHost.startSession(controller: controller)
-        guard let application = context?.application,
-              let router = try? ControllerActionRouter(
-                  document: controller,
-                  application: application
-              ) else {
-            actionRouter = nil
+        pairingHost.startSession(pack: pack)
+        guard let application = context?.application else {
+            clearActionRouters()
             return
         }
-        installActionRouter(router, context: context)
+        installActionRouters(for: pack, application: application, context: context)
     }
 
-    private func applyLayout(_ document: ControllerDocument) -> String? {
+    private func applyLayout(_ pack: ControllerSessionPack) -> String? {
         do {
-            try pairingHost.publishController(document)
+            try pairingHost.publishPack(pack)
             if let application = contextMonitor.capture()?.application,
-               application.bundleIdentifier == document.target.bundleIdentifier,
-               let router = try? ControllerActionRouter(
-                   document: document,
-                   application: application
-               ) {
-                installActionRouter(router, context: contextMonitor.capture())
+               application.bundleIdentifier == pack.target.bundleIdentifier {
+                installActionRouters(
+                    for: pack,
+                    application: application,
+                    context: contextMonitor.capture()
+                )
             }
             return nil
         } catch {
@@ -215,23 +212,41 @@ final class OverlayPanelController {
         }
     }
 
-    private func installActionRouter(_ router: ControllerActionRouter, context: AppContext?) {
-        actionRouter?.deactivate()
-        actionRouter = router
+    private func installActionRouters(
+        for pack: ControllerSessionPack,
+        application: NSRunningApplication,
+        context: AppContext?
+    ) {
+        clearActionRouters()
+        var routers: [Int: ControllerActionRouter] = [:]
+        for seat in pack.seats {
+            guard let router = try? ControllerActionRouter(
+                document: seat.controller,
+                application: application
+            ) else { continue }
+            routers[seat.index] = router
+        }
+        actionRouters = routers
         pairingHost.onConnectionEnded = { [weak self] in
-            self?.actionRouter?.deactivate()
-            self?.actionRouter = nil
+            self?.clearActionRouters()
             self?.pendingControlEvent = nil
         }
-        pairingHost.onControlEvent = { [weak self] event in
+        pairingHost.onControlEvent = { [weak self] seatIndex, event in
             guard let self else { return }
             let previous = pendingControlEvent
             pendingControlEvent = Task { @MainActor [weak self] in
                 await previous?.value
-                guard let self, let router = self.actionRouter else { return }
+                guard let self, let router = self.actionRouters[seatIndex] else { return }
                 await self.route(event, using: router, context: context)
             }
         }
+    }
+
+    private func clearActionRouters() {
+        for router in actionRouters.values {
+            router.deactivate()
+        }
+        actionRouters.removeAll()
     }
 
     private func saveAPIKey(_ key: String) -> String? {
@@ -256,7 +271,8 @@ final class OverlayPanelController {
         let generationContext = ControllerGenerationContext(
             bundleIdentifier: bundleIdentifier,
             appName: context?.displayName ?? application.localizedName ?? "Mac app",
-            windowTitle: context?.windowTitle
+            windowTitle: context?.windowTitle,
+            playerCount: editorState.playerCount
         )
         editorState.isGenerating = true
         editorState.generationStatus = "Capturing window…"
@@ -308,7 +324,7 @@ final class OverlayPanelController {
             try Task.checkCancellation()
             guard generationID == id else { return }
             editorState.generationStatus = "Generating…"
-            let document = try await generator.generate(
+            let pack = try await generator.generate(
                 request: request,
                 context: context,
                 screenshotJPEG: screenshotJPEG,
@@ -317,12 +333,7 @@ final class OverlayPanelController {
             )
             try Task.checkCancellation()
             guard generationID == id else { return }
-            editorState.draft = document
-            editorState.selectedControlID = document.layout.items.first?.controlID
-            editorState.isIterativePrompt = true
-            editorState.layoutDirty = false
-            editorState.generationError = nil
-            editorState.prompt = ""
+            editorState.loadGenerated(pack)
         } catch is CancellationError {
             return
         } catch {
