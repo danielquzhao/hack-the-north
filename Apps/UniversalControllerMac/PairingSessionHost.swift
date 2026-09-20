@@ -91,6 +91,13 @@ final class PairingSessionHost: ObservableObject {
         }
     }
 
+    func publishController(_ document: ControllerDocument) throws {
+        try SchemaValidator.validate(document)
+        controller = document
+        guard case .connected = state else { return }
+        try framedConnection?.send(.schemaSnapshot(document))
+    }
+
     func stopSession(notifyPeer: Bool = true) {
         onConnectionEnded?()
         onConnectionEnded = nil

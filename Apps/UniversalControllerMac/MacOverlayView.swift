@@ -37,6 +37,7 @@ final class ControllerEditorState: ObservableObject {
     @Published var generationError: String?
     @Published var draftWasGenerated = false
     @Published var isIterativePrompt = false
+    @Published var layoutDirty = false
 }
 
 struct MacOverlayView: View {
@@ -53,6 +54,7 @@ struct MacOverlayView: View {
     let onStartPairing: (ControllerDocument) -> Void
     let onNextSlide: () -> Void
     let onWorkspaceExpansionChanged: (Bool) -> Void
+    let onApplyLayout: (ControllerDocument) -> String?
 
     @State private var permissionStatus = MacActionExecutor.permissionStatus
     @State private var showKeyboardHelp = false
@@ -195,16 +197,6 @@ struct MacOverlayView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Close")
-
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    Text("esc to close")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-            }
         }
         .padding(24)
         .frame(width: isWorkspaceExpanded ? 1100 : 430, height: 760)
@@ -560,6 +552,10 @@ private extension MacOverlayView {
         }
     }
 
+    var canEditLayout: Bool {
+        !editorState.isGenerating && draft != nil
+    }
+
     var draftValidationError: String? {
         guard let draft else { return "Generate a controller before pairing." }
         do {
@@ -576,6 +572,7 @@ private extension MacOverlayView {
         selectedControlID = draft?.layout.items.first?.controlID
         editorState.draftWasGenerated = false
         editorState.isIterativePrompt = false
+        editorState.layoutDirty = false
         editorState.generationError = nil
     }
 
@@ -588,7 +585,7 @@ private extension MacOverlayView {
     ) {
         guard let draft else { return }
         let layouts = layout.map {
-            draft.layouts.replacing($0, for: draft.preferredOrientation)
+            draft.layouts.replacing($0, for: preferredOrientation ?? draft.preferredOrientation)
         } ?? draft.layouts
         self.draft = ControllerDocument(
             schemaVersion: draft.schemaVersion,
@@ -601,6 +598,39 @@ private extension MacOverlayView {
             controls: controls ?? draft.controls,
             bindings: bindings ?? draft.bindings
         )
+        editorState.layoutDirty = true
+    }
+
+    func updateFrame(_ id: String, _ frame: LayoutRect) {
+        guard let draft, canEditLayout else { return }
+        let items = draft.layout.items.map { item in
+            item.controlID == id
+                ? ControllerLayoutItem(controlID: id, frame: frame.clamped())
+                : item
+        }
+        replaceDraft(layout: ControllerLayout(items: items))
+    }
+
+    func applyLayout() {
+        guard let draft, canEditLayout else { return }
+        let committed = ControllerDocument(
+            schemaVersion: draft.schemaVersion,
+            id: draft.id,
+            revision: draft.revision + 1,
+            name: draft.name,
+            target: draft.target,
+            preferredOrientation: draft.preferredOrientation,
+            layouts: draft.layouts,
+            controls: draft.controls,
+            bindings: draft.bindings
+        )
+        if let error = onApplyLayout(committed) {
+            editorState.generationError = error
+            return
+        }
+        self.draft = committed
+        editorState.layoutDirty = false
+        editorState.generationError = nil
     }
 
     var assetLibraryPlaceholder: some View {
@@ -663,7 +693,7 @@ private extension MacOverlayView {
                     VStack(alignment: .leading, spacing: 12) {
                         inspector(draft)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                            .disabled(!canEditDraft)
+                            .disabled(!canEditLayout)
 
                         if let draftValidationError {
                             Label(draftValidationError, systemImage: "exclamationmark.triangle")
@@ -703,7 +733,7 @@ private extension MacOverlayView {
                             width: draft.preferredOrientation == .portrait ? 320 : 600,
                             height: draft.preferredOrientation == .portrait ? 430 : 350
                         )
-                        .disabled(!canEditDraft)
+                        .disabled(!canEditLayout)
                 } else {
                     EmptyPhonePreview()
                         .frame(width: 600, height: 350)
@@ -718,6 +748,13 @@ private extension MacOverlayView {
                     orientationPicker(for: draft)
                 }
                 Spacer()
+                if editorState.layoutDirty {
+                    Button("Apply Layout") {
+                        applyLayout()
+                    }
+                    .buttonStyle(SolidGreyButtonStyle())
+                    .disabled(!canEditLayout)
+                }
             }
         }
         .frame(maxHeight: .infinity)
@@ -740,75 +777,30 @@ private extension MacOverlayView {
 
     func controllerPreview(_ draft: ControllerDocument) -> some View {
         GeometryReader { geometry in
-            let rows = previewRows(for: draft)
-            let spacing: CGFloat = 8
-            let units = rows.reduce(0) { $0 + $1.heightUnits }
-            let available = max(0, geometry.size.height - CGFloat(max(rows.count - 1, 0)) * spacing)
-            let contentHeight = max(available, CGFloat(units) * 54)
-
-            ScrollView {
-                Grid(horizontalSpacing: spacing, verticalSpacing: spacing) {
-                    ForEach(rows) { row in
-                        GridRow {
-                            ForEach(row.items) { item in
-                                if let control = draft.control(id: item.controlID) {
-                                    previewCell(control)
-                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                        .gridCellColumns(item.columnSpan)
-                                }
+            let size = geometry.size
+            ZStack(alignment: .topLeading) {
+                ForEach(draft.layout.items) { item in
+                    if let control = draft.control(id: item.controlID) {
+                        EditablePreviewControl(
+                            control: control,
+                            frame: item.frame,
+                            canvasSize: size,
+                            isSelected: selectedControlID == control.id,
+                            color: previewColor(for: control),
+                            onSelect: { selectedControlID = control.id },
+                            onChangeFrame: { frame in
+                                updateFrame(control.id, frame)
                             }
-                        }
-                        .frame(height: contentHeight * CGFloat(row.heightUnits) / CGFloat(max(units, 1)))
+                        )
                     }
                 }
-                .frame(maxWidth: .infinity)
             }
-            .scrollIndicators(.hidden)
+            .frame(width: size.width, height: size.height)
+            .contentShape(Rectangle())
+            .onTapGesture { selectedControlID = nil }
         }
         .padding(14)
         .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 22))
-    }
-
-    func previewCell(_ control: ControlDefinition) -> some View {
-        Button {
-            selectedControlID = control.id
-        } label: {
-            VStack(spacing: 5) {
-                switch control.kind {
-                case .button(let configuration):
-                    if configuration.face != .standard {
-                        Text(configuration.face.rawValue.uppercased())
-                            .font(.title3.bold())
-                            .frame(width: 42, height: 42)
-                            .background(Circle().fill(previewColor(for: control)))
-                    } else {
-                        Image(systemName: "hand.tap.fill")
-                            .font(.title2)
-                    }
-                case .joystick:
-                    Image(systemName: "circle.circle.fill")
-                        .font(.system(size: 44))
-                case .motion:
-                    Image(systemName: "iphone.gen3.radiowaves.left.and.right")
-                        .font(.title2)
-                }
-                Text(control.label)
-                    .font(.caption.weight(.medium))
-                    .lineLimit(2)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .foregroundStyle(.white)
-            .background(
-                previewColor(for: control).opacity(selectedControlID == control.id ? 0.65 : 0.25),
-                in: RoundedRectangle(cornerRadius: 12)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(selectedControlID == control.id ? .white : .clear, lineWidth: 2)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Edit \(control.label)")
     }
 
     func previewColor(for control: ControlDefinition) -> Color {
@@ -848,24 +840,16 @@ private extension MacOverlayView {
                     ))
                     .textFieldStyle(.roundedBorder)
 
-                    HStack {
-                        Button("Move earlier", systemImage: "arrow.up") { moveControl(id, by: -1) }
-                            .disabled(index == 0)
-                        Button("Move later", systemImage: "arrow.down") { moveControl(id, by: 1) }
-                            .disabled(index == draft.layout.items.count - 1)
-                    }
-                    .labelStyle(.iconOnly)
-                    .help("Change the control's position in the phone layout")
-
-                    Stepper("Width: \(draft.layout.items[index].columnSpan) column(s)", value: Binding(
-                        get: { self.draft?.layout.items.first(where: { $0.controlID == id })?.columnSpan ?? 1 },
-                        set: { updateSize(id, columns: $0) }
-                    ), in: 1...draft.layout.columns)
-
-                    Stepper("Height: \(draft.layout.items[index].rowSpan) unit(s)", value: Binding(
-                        get: { self.draft?.layout.items.first(where: { $0.controlID == id })?.rowSpan ?? 1 },
-                        set: { updateSize(id, rows: $0) }
-                    ), in: 1...SchemaValidator.maximumSpan)
+                    let frame = draft.layout.items[index].frame
+                    Text("Position \(Int(frame.x * 100))%, \(Int(frame.y * 100))%")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("Size \(Int(frame.width * 100))% × \(Int(frame.height * 100))%")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("Drag the control in the preview to move it. Drag the corner handle to resize.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
                     if case .button(let configuration) = control.kind {
                         Picker("Face", selection: Binding(
@@ -966,53 +950,8 @@ private extension MacOverlayView {
         }
     }
 
-    func previewRows(for document: ControllerDocument) -> [PreviewRow] {
-        var rows: [[ControllerLayoutItem]] = []
-        var current: [ControllerLayoutItem] = []
-        var occupied = 0
-        for item in document.layout.items {
-            if occupied + item.columnSpan > document.layout.columns {
-                rows.append(current)
-                current = []
-                occupied = 0
-            }
-            current.append(item)
-            occupied += item.columnSpan
-            if occupied == document.layout.columns {
-                rows.append(current)
-                current = []
-                occupied = 0
-            }
-        }
-        if !current.isEmpty { rows.append(current) }
-        return rows.enumerated().map { PreviewRow(id: $0.offset, items: $0.element) }
-    }
-
-    func moveControl(_ id: String, by offset: Int) {
-        guard let draft,
-              let index = draft.layout.items.firstIndex(where: { $0.controlID == id }),
-              draft.layout.items.indices.contains(index + offset) else { return }
-        var items = draft.layout.items
-        items.swapAt(index, index + offset)
-        replaceDraft(layout: ControllerLayout(columns: draft.layout.columns, items: items))
-    }
-
-    func updateSize(_ id: String, columns: Int? = nil, rows: Int? = nil) {
-        guard let draft else { return }
-        let items = draft.layout.items.map { item in
-            item.controlID == id
-                ? ControllerLayoutItem(
-                    controlID: id,
-                    columnSpan: columns ?? item.columnSpan,
-                    rowSpan: rows ?? item.rowSpan
-                )
-                : item
-        }
-        replaceDraft(layout: ControllerLayout(columns: draft.layout.columns, items: items))
-    }
-
     func updateControl(_ id: String, transform: (ControlDefinition) -> ControlDefinition) {
-        guard let draft else { return }
+        guard let draft, canEditLayout else { return }
         replaceDraft(controls: draft.controls.map { $0.id == id ? transform($0) : $0 })
     }
 
@@ -1024,7 +963,7 @@ private extension MacOverlayView {
     }
 
     func setAction(_ id: String, _ action: ActionDefinition) {
-        guard let draft else { return }
+        guard let draft, canEditLayout else { return }
         replaceDraft(bindings: draft.bindings.map { binding in
             binding.controlID == id
                 ? ControlBinding(id: binding.id, controlID: id, event: binding.event, action: action)
@@ -1090,11 +1029,105 @@ private struct EmptyPhonePreview: View {
     }
 }
 
-private struct PreviewRow: Identifiable {
-    let id: Int
-    let items: [ControllerLayoutItem]
+private struct EditablePreviewControl: View {
+    let control: ControlDefinition
+    let frame: LayoutRect
+    let canvasSize: CGSize
+    let isSelected: Bool
+    let color: Color
+    let onSelect: () -> Void
+    let onChangeFrame: (LayoutRect) -> Void
 
-    var heightUnits: Int {
-        max(items.map(\.rowSpan).max() ?? 1, 1)
+    @State private var moveOrigin: LayoutRect?
+    @State private var resizeOrigin: LayoutRect?
+
+    private var pixelFrame: CGRect {
+        CGRect(
+            x: frame.x * canvasSize.width,
+            y: frame.y * canvasSize.height,
+            width: max(24, frame.width * canvasSize.width),
+            height: max(24, frame.height * canvasSize.height)
+        )
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(color.opacity(isSelected ? 0.95 : 0.82))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(.white.opacity(isSelected ? 0.95 : 0.25), lineWidth: isSelected ? 2 : 1)
+                }
+                .shadow(color: .black.opacity(0.25), radius: isSelected ? 8 : 3, y: 2)
+
+            Text(control.label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+                .padding(8)
+                .minimumScaleFactor(0.6)
+                .lineLimit(2)
+
+            if isSelected {
+                Circle()
+                    .fill(.white)
+                    .frame(width: 12, height: 12)
+                    .overlay {
+                        Circle()
+                            .strokeBorder(.black.opacity(0.25), lineWidth: 1)
+                    }
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(resizeGesture)
+            }
+        }
+        .frame(width: pixelFrame.width, height: pixelFrame.height)
+        .position(x: pixelFrame.midX, y: pixelFrame.midY)
+        .gesture(moveGesture)
+        .onTapGesture(perform: onSelect)
+    }
+
+    private var moveGesture: some Gesture {
+        DragGesture(minimumDistance: 3)
+            .onChanged { value in
+                if moveOrigin == nil {
+                    onSelect()
+                    moveOrigin = frame
+                }
+                guard let origin = moveOrigin, canvasSize.width > 0, canvasSize.height > 0 else { return }
+                onChangeFrame(
+                    LayoutRect(
+                        x: origin.x + value.translation.width / canvasSize.width,
+                        y: origin.y + value.translation.height / canvasSize.height,
+                        width: origin.width,
+                        height: origin.height
+                    ).clamped()
+                )
+            }
+            .onEnded { _ in
+                moveOrigin = nil
+            }
+    }
+
+    private var resizeGesture: some Gesture {
+        DragGesture(minimumDistance: 1)
+            .onChanged { value in
+                if resizeOrigin == nil {
+                    onSelect()
+                    resizeOrigin = frame
+                }
+                guard let origin = resizeOrigin, canvasSize.width > 0, canvasSize.height > 0 else { return }
+                onChangeFrame(
+                    LayoutRect(
+                        x: origin.x,
+                        y: origin.y,
+                        width: origin.width + value.translation.width / canvasSize.width,
+                        height: origin.height + value.translation.height / canvasSize.height
+                    ).clamped()
+                )
+            }
+            .onEnded { _ in
+                resizeOrigin = nil
+            }
     }
 }

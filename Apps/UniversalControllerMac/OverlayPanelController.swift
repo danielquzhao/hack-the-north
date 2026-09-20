@@ -15,6 +15,8 @@ final class OverlayPanelController {
     private var lastPanelOrigin: NSPoint?
     private var outsideClickMonitor: Any?
     private var localEventMonitor: Any?
+    private var actionRouter: ControllerActionRouter?
+    private var pendingControlEvent: Task<Void, Never>?
 
     init(contextMonitor: AppContextMonitor) {
         self.contextMonitor = contextMonitor
@@ -39,6 +41,7 @@ final class OverlayPanelController {
             editorState.selectedControlID = nil
             editorState.draftWasGenerated = false
             editorState.isIterativePrompt = false
+            editorState.layoutDirty = false
         }
         if editorState.isGenerating,
            generationTargetBundleID != context?.application.bundleIdentifier {
@@ -57,7 +60,7 @@ final class OverlayPanelController {
         }
         panel.makeKeyAndOrderFront(nil)
 
-        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] _ in
             Task { @MainActor [weak self] in self?.close() }
         }
         localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -97,7 +100,7 @@ final class OverlayPanelController {
         panel.level = .floating
         panel.isFloatingPanel = true
         panel.isMovable = true
-        panel.isMovableByWindowBackground = true
+        panel.isMovableByWindowBackground = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -131,6 +134,9 @@ final class OverlayPanelController {
             },
             onWorkspaceExpansionChanged: { [weak self] expanded in
                 self?.setWorkspaceExpanded(expanded)
+            },
+            onApplyLayout: { [weak self] document in
+                self?.applyLayout(document)
             }
         ))
         return panel
@@ -204,19 +210,49 @@ final class OverlayPanelController {
             return
         }
         pairingHost.startSession(controller: controller)
-        if let application = context?.application,
-           let router = try? ControllerActionRouter(
-               document: controller,
-               application: application
-           ) {
-            pairingHost.onConnectionEnded = { router.deactivate() }
-            var pendingEvent: Task<Void, Never>?
-            pairingHost.onControlEvent = { [weak self] event in
-                let previous = pendingEvent
-                pendingEvent = Task { @MainActor [weak self] in
-                    await previous?.value
-                    await self?.route(event, using: router, context: context)
-                }
+        guard let application = context?.application,
+              let router = try? ControllerActionRouter(
+                  document: controller,
+                  application: application
+              ) else {
+            actionRouter = nil
+            return
+        }
+        installActionRouter(router, context: context)
+    }
+
+    private func applyLayout(_ document: ControllerDocument) -> String? {
+        do {
+            try pairingHost.publishController(document)
+            if let application = contextMonitor.capture()?.application,
+               application.bundleIdentifier == document.target.bundleIdentifier,
+               let router = try? ControllerActionRouter(
+                   document: document,
+                   application: application
+               ) {
+                installActionRouter(router, context: contextMonitor.capture())
+            }
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    private func installActionRouter(_ router: ControllerActionRouter, context: AppContext?) {
+        actionRouter?.deactivate()
+        actionRouter = router
+        pairingHost.onConnectionEnded = { [weak self] in
+            self?.actionRouter?.deactivate()
+            self?.actionRouter = nil
+            self?.pendingControlEvent = nil
+        }
+        pairingHost.onControlEvent = { [weak self] event in
+            guard let self else { return }
+            let previous = pendingControlEvent
+            pendingControlEvent = Task { @MainActor [weak self] in
+                await previous?.value
+                guard let self, let router = self.actionRouter else { return }
+                await self.route(event, using: router, context: context)
             }
         }
     }
@@ -308,6 +344,7 @@ final class OverlayPanelController {
             editorState.selectedControlID = document.layout.items.first?.controlID
             editorState.draftWasGenerated = true
             editorState.isIterativePrompt = true
+            editorState.layoutDirty = false
             editorState.generationError = nil
             editorState.prompt = ""
         } catch is CancellationError {
@@ -321,45 +358,37 @@ final class OverlayPanelController {
 
     private func makePresenterController(target: ControllerTarget) -> ControllerDocument {
         ControllerDocument(
-                schemaVersion: ControllerDocument.currentSchemaVersion,
-                id: UUID(),
-                revision: 1,
-                name: "Keynote Presenter",
-                target: target,
+            schemaVersion: ControllerDocument.currentSchemaVersion,
+            id: UUID(),
+            revision: 1,
+            name: "Keynote Presenter",
+            target: target,
             preferredOrientation: .landscape,
             layouts: ControllerLayouts(
-                portrait: ControllerLayout(
+                portrait: AbsoluteLayoutBuilder.fromGrid(
                     columns: 1,
-                    items: [ControllerLayoutItem(
-                        controlID: "next-slide",
-                        columnSpan: 1,
-                        rowSpan: 1
-                    )]
+                    specs: [("next-slide", 1, 1)]
                 ),
-                landscape: ControllerLayout(
+                landscape: AbsoluteLayoutBuilder.fromGrid(
                     columns: 2,
-                    items: [ControllerLayoutItem(
-                        controlID: "next-slide",
-                        columnSpan: 2,
-                        rowSpan: 1
-                    )]
+                    specs: [("next-slide", 2, 1)]
                 )
+            ),
+            controls: [
+                .button(id: "next-slide", label: "Next Slide"),
+            ],
+            bindings: [
+                ControlBinding(
+                    id: "next-slide-binding",
+                    controlID: "next-slide",
+                    event: .triggered,
+                    action: .keyChord(KeyChordAction(
+                        key: .rightArrow,
+                        modifiers: []
+                    ))
                 ),
-                controls: [
-                    .button(id: "next-slide", label: "Next Slide"),
-                ],
-                bindings: [
-                    ControlBinding(
-                        id: "next-slide-binding",
-                        controlID: "next-slide",
-                        event: .triggered,
-                        action: .keyChord(KeyChordAction(
-                            key: .rightArrow,
-                            modifiers: []
-                        ))
-                    ),
-                ]
-            )
+            ]
+        )
     }
 
     private func makeGamepadController(
@@ -374,14 +403,10 @@ final class OverlayPanelController {
         ]
         var controls = [ControlDefinition.joystick(id: "stick", label: "Pointer")]
         controls += buttons.map { .button(id: $0.id, label: $0.label, face: $0.face) }
-        var portraitItems = [ControllerLayoutItem(controlID: "stick", columnSpan: 2, rowSpan: 2)]
-        portraitItems += buttons.map {
-            ControllerLayoutItem(controlID: $0.id, columnSpan: 1, rowSpan: 1)
-        }
-        var landscapeItems = [ControllerLayoutItem(controlID: "stick", columnSpan: 2, rowSpan: 2)]
-        landscapeItems += buttons.map {
-            ControllerLayoutItem(controlID: $0.id, columnSpan: 1, rowSpan: 1)
-        }
+        var portraitSpecs: [(String, Int, Int)] = [("stick", 2, 2)]
+        portraitSpecs += buttons.map { ($0.id, 1, 1) }
+        var landscapeSpecs: [(String, Int, Int)] = [("stick", 2, 2)]
+        landscapeSpecs += buttons.map { ($0.id, 1, 1) }
         var bindings = [ControlBinding(
             id: "stick-move",
             controlID: "stick",
@@ -399,12 +424,8 @@ final class OverlayPanelController {
 
         if includeTilt {
             controls.append(.tilt(id: "tilt", label: "Tilt Pointer"))
-            portraitItems.append(
-                ControllerLayoutItem(controlID: "tilt", columnSpan: 2, rowSpan: 1)
-            )
-            landscapeItems.append(
-                ControllerLayoutItem(controlID: "tilt", columnSpan: 2, rowSpan: 1)
-            )
+            portraitSpecs.append(("tilt", 2, 1))
+            landscapeSpecs.append(("tilt", 2, 1))
             bindings.append(ControlBinding(
                 id: "tilt-move",
                 controlID: "tilt",
@@ -421,8 +442,8 @@ final class OverlayPanelController {
             target: target,
             preferredOrientation: .landscape,
             layouts: ControllerLayouts(
-                portrait: ControllerLayout(columns: 2, items: portraitItems),
-                landscape: ControllerLayout(columns: 4, items: landscapeItems)
+                portrait: AbsoluteLayoutBuilder.fromGrid(columns: 2, specs: portraitSpecs),
+                landscape: AbsoluteLayoutBuilder.fromGrid(columns: 4, specs: landscapeSpecs)
             ),
             controls: controls,
             bindings: bindings
@@ -474,4 +495,32 @@ final class OverlayPanelController {
 
 private final class OverlayPanel: NSPanel {
     override var canBecomeKey: Bool { true }
+
+    private var windowDragMouseStart: NSPoint?
+    private var windowDragOriginStart: NSPoint?
+
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .rightMouseDown:
+            windowDragMouseStart = NSEvent.mouseLocation
+            windowDragOriginStart = frame.origin
+            return
+        case .rightMouseDragged:
+            if let mouseStart = windowDragMouseStart, let originStart = windowDragOriginStart {
+                let current = NSEvent.mouseLocation
+                setFrameOrigin(NSPoint(
+                    x: originStart.x + (current.x - mouseStart.x),
+                    y: originStart.y + (current.y - mouseStart.y)
+                ))
+            }
+            return
+        case .rightMouseUp:
+            windowDragMouseStart = nil
+            windowDragOriginStart = nil
+            return
+        default:
+            break
+        }
+        super.sendEvent(event)
+    }
 }

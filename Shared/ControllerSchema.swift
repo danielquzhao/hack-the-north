@@ -1,7 +1,7 @@
 import Foundation
 
 struct ControllerDocument: Codable, Equatable, Sendable, Identifiable {
-    static let currentSchemaVersion = 2
+    static let currentSchemaVersion = 3
 
     let schemaVersion: Int
     let id: UUID
@@ -27,6 +27,20 @@ struct ControllerDocument: Codable, Equatable, Sendable, Identifiable {
 
     func binding(controlID: String, event: ControlEventKind) -> ControlBinding? {
         bindings.first { $0.controlID == controlID && $0.event == event }
+    }
+
+    func replacing(revision: Int? = nil, layouts: ControllerLayouts? = nil) -> ControllerDocument {
+        ControllerDocument(
+            schemaVersion: schemaVersion,
+            id: id,
+            revision: revision ?? self.revision,
+            name: name,
+            target: target,
+            preferredOrientation: preferredOrientation,
+            layouts: layouts ?? self.layouts,
+            controls: controls,
+            bindings: bindings
+        )
     }
 }
 
@@ -71,16 +85,78 @@ struct ControllerLayouts: Codable, Equatable, Sendable {
 }
 
 struct ControllerLayout: Codable, Equatable, Sendable {
-    let columns: Int
     let items: [ControllerLayoutItem]
+}
+
+/// Normalized top-left origin frame in the phone canvas. Values are 0...1.
+struct LayoutRect: Codable, Equatable, Sendable {
+    var x: Double
+    var y: Double
+    var width: Double
+    var height: Double
+
+    var maxX: Double { x + width }
+    var maxY: Double { y + height }
+
+    func clamped(minimumSize: Double = 0.08) -> LayoutRect {
+        let width = min(1, max(minimumSize, width))
+        let height = min(1, max(minimumSize, height))
+        let x = min(max(0, x), 1 - width)
+        let y = min(max(0, y), 1 - height)
+        return LayoutRect(x: x, y: y, width: width, height: height)
+    }
 }
 
 struct ControllerLayoutItem: Codable, Equatable, Sendable, Identifiable {
     var id: String { controlID }
 
     let controlID: String
-    let columnSpan: Int
-    let rowSpan: Int
+    let frame: LayoutRect
+}
+
+enum AbsoluteLayoutBuilder {
+    /// Packs grid-style spans into normalized absolute frames for demos and AI conversion.
+    static func fromGrid(
+        columns: Int,
+        specs: [(id: String, columnSpan: Int, rowSpan: Int)],
+        gap: Double = 0.03
+    ) -> ControllerLayout {
+        let columns = max(1, columns)
+        var cursorX = 0
+        var cursorY = 0
+        var rowHeight = 1
+        var maxRow = 1
+        var placed: [(String, Int, Int, Int, Int)] = []
+
+        for spec in specs {
+            let span = min(max(1, spec.columnSpan), columns)
+            let height = max(1, spec.rowSpan)
+            if cursorX + span > columns {
+                cursorX = 0
+                cursorY += rowHeight
+                rowHeight = height
+            }
+            rowHeight = max(rowHeight, height)
+            placed.append((spec.id, cursorX, cursorY, span, height))
+            cursorX += span
+            maxRow = max(maxRow, cursorY + height)
+        }
+
+        let cellWidth = (1 - gap * Double(columns + 1)) / Double(columns)
+        let cellHeight = (1 - gap * Double(maxRow + 1)) / Double(max(maxRow, 1))
+        let items = placed.map { id, column, row, span, height in
+            ControllerLayoutItem(
+                controlID: id,
+                frame: LayoutRect(
+                    x: gap + Double(column) * (cellWidth + gap),
+                    y: gap + Double(row) * (cellHeight + gap),
+                    width: Double(span) * cellWidth + Double(span - 1) * gap,
+                    height: Double(height) * cellHeight + Double(height - 1) * gap
+                ).clamped()
+            )
+        }
+        return ControllerLayout(items: items)
+    }
 }
 
 enum ButtonVariant: String, Codable, Equatable, Sendable {

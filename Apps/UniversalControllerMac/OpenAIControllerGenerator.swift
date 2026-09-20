@@ -194,15 +194,15 @@ struct OpenAIControllerGenerator: ControllerGenerating {
             }
         }
         let portraitItems = body.controls.enumerated().map { index, item in
-            ControllerLayoutItem(
-                controlID: "control-\(index + 1)",
+            (
+                id: "control-\(index + 1)",
                 columnSpan: item.portraitColumnSpan,
                 rowSpan: item.portraitRowSpan
             )
         }
         let landscapeItems = body.controls.enumerated().map { index, item in
-            ControllerLayoutItem(
-                controlID: "control-\(index + 1)",
+            (
+                id: "control-\(index + 1)",
                 columnSpan: item.landscapeColumnSpan,
                 rowSpan: item.landscapeRowSpan
             )
@@ -232,13 +232,13 @@ struct OpenAIControllerGenerator: ControllerGenerating {
             ),
             preferredOrientation: .landscape,
             layouts: ControllerLayouts(
-                portrait: ControllerLayout(
+                portrait: AbsoluteLayoutBuilder.fromGrid(
                     columns: body.portraitColumns,
-                    items: portraitItems
+                    specs: portraitItems
                 ),
-                landscape: ControllerLayout(
+                landscape: AbsoluteLayoutBuilder.fromGrid(
                     columns: body.landscapeColumns,
-                    items: landscapeItems
+                    specs: landscapeItems
                 )
             ),
             controls: controls,

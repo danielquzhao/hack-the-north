@@ -9,32 +9,22 @@ struct ControllerRendererView: View {
     var body: some View {
         GeometryReader { geometry in
             if orientationMatches(geometry.size) {
-                let spacing: CGFloat = 12
-                let heightUnits = rows.reduce(0) { $0 + $1.heightUnits }
-                let availableHeight = max(
-                    0,
-                    geometry.size.height - CGFloat(max(rows.count - 1, 0)) * spacing
-                )
-                let contentHeight = max(availableHeight, CGFloat(heightUnits) * 112)
-
-                ScrollView {
-                    Grid(horizontalSpacing: spacing, verticalSpacing: spacing) {
-                        ForEach(rows) { row in
-                            GridRow {
-                                ForEach(row.items) { item in
-                                    if let control = document.control(id: item.controlID) {
-                                        controlView(control)
-                                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                            .gridCellColumns(item.columnSpan)
-                                    }
-                                }
-                            }
-                            .frame(height: contentHeight * CGFloat(row.heightUnits) / CGFloat(max(heightUnits, 1)))
+                ZStack(alignment: .topLeading) {
+                    ForEach(document.layout.items) { item in
+                        if let control = document.control(id: item.controlID) {
+                            controlView(control)
+                                .frame(
+                                    width: geometry.size.width * item.frame.width,
+                                    height: geometry.size.height * item.frame.height
+                                )
+                                .position(
+                                    x: geometry.size.width * (item.frame.x + item.frame.width / 2),
+                                    y: geometry.size.height * (item.frame.y + item.frame.height / 2)
+                                )
                         }
                     }
-                    .frame(maxWidth: .infinity)
                 }
-                .scrollIndicators(.hidden)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 14) {
                     Image(systemName: document.preferredOrientation == .landscape
@@ -62,36 +52,6 @@ struct ControllerRendererView: View {
         }
     }
 
-    private var rows: [ControllerLayoutRow] {
-        var groupedItems: [[ControllerLayoutItem]] = []
-        var currentItems: [ControllerLayoutItem] = []
-        var occupiedColumns = 0
-
-        for item in document.layout.items {
-            if occupiedColumns + item.columnSpan > document.layout.columns {
-                groupedItems.append(currentItems)
-                currentItems = []
-                occupiedColumns = 0
-            }
-
-            currentItems.append(item)
-            occupiedColumns += item.columnSpan
-
-            if occupiedColumns == document.layout.columns {
-                groupedItems.append(currentItems)
-                currentItems = []
-                occupiedColumns = 0
-            }
-        }
-
-        if !currentItems.isEmpty {
-            groupedItems.append(currentItems)
-        }
-        return groupedItems.enumerated().map {
-            ControllerLayoutRow(id: $0.offset, items: $0.element)
-        }
-    }
-
     @ViewBuilder
     private func controlView(_ control: ControlDefinition) -> some View {
         switch control.kind {
@@ -114,15 +74,6 @@ struct ControllerRendererView: View {
                 onEvent(control, .changed, .vector2(value))
             }
         }
-    }
-}
-
-private struct ControllerLayoutRow: Identifiable {
-    let id: Int
-    let items: [ControllerLayoutItem]
-
-    var heightUnits: Int {
-        max(items.map(\.rowSpan).max() ?? 1, 1)
     }
 }
 

@@ -61,7 +61,7 @@ final class SchemaValidatorTests: XCTestCase {
                 .button(id: "next", label: "Duplicate"),
             ],
             items: [
-                ControllerLayoutItem(controlID: "next", columnSpan: 1, rowSpan: 1),
+                ControllerLayoutItem(controlID: "next", frame: LayoutRect(x: 0.1, y: 0.1, width: 0.8, height: 0.2)),
             ]
         )
 
@@ -77,6 +77,16 @@ final class SchemaValidatorTests: XCTestCase {
     func testLandscapeLayoutMustReferenceEveryControl() {
         let document = makeDocument(landscapeItems: [])
 
+        XCTAssertThrowsError(try SchemaValidator.validate(document))
+    }
+
+    func testInvalidAbsoluteFrameIsRejected() {
+        let document = makeDocument(
+            items: [ControllerLayoutItem(
+                controlID: "next",
+                frame: LayoutRect(x: 0.9, y: 0.1, width: 0.5, height: 0.2)
+            )]
+        )
         XCTAssertThrowsError(try SchemaValidator.validate(document))
     }
 
@@ -118,9 +128,9 @@ final class SchemaValidatorTests: XCTestCase {
                 .tilt(id: "tilt", label: "Tilt Pointer"),
             ],
             items: [
-                ControllerLayoutItem(controlID: "a", columnSpan: 1, rowSpan: 1),
-                ControllerLayoutItem(controlID: "stick", columnSpan: 1, rowSpan: 2),
-                ControllerLayoutItem(controlID: "tilt", columnSpan: 1, rowSpan: 1),
+                ControllerLayoutItem(controlID: "a", frame: LayoutRect(x: 0.05, y: 0.05, width: 0.4, height: 0.25)),
+                ControllerLayoutItem(controlID: "stick", frame: LayoutRect(x: 0.55, y: 0.05, width: 0.4, height: 0.55)),
+                ControllerLayoutItem(controlID: "tilt", frame: LayoutRect(x: 0.05, y: 0.7, width: 0.9, height: 0.25)),
             ],
             bindings: [
                 ControlBinding(id: "a-press", controlID: "a", event: .triggered,
@@ -164,7 +174,10 @@ final class SchemaValidatorTests: XCTestCase {
     func testInvalidPointerGainIsRejected() {
         let document = makeDocument(
             controls: [.joystick(id: "stick", label: "Pointer")],
-            items: [ControllerLayoutItem(controlID: "stick", columnSpan: 1, rowSpan: 1)],
+            items: [ControllerLayoutItem(
+                controlID: "stick",
+                frame: LayoutRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)
+            )],
             bindings: [ControlBinding(
                 id: "stick-move",
                 controlID: "stick",
@@ -179,8 +192,8 @@ final class SchemaValidatorTests: XCTestCase {
         let document = makeDocument(
             controls: [.button(id: "next", label: "Next"), .button(id: "other", label: "Other")],
             items: [
-                ControllerLayoutItem(controlID: "next", columnSpan: 1, rowSpan: 1),
-                ControllerLayoutItem(controlID: "other", columnSpan: 1, rowSpan: 1),
+                ControllerLayoutItem(controlID: "next", frame: LayoutRect(x: 0.05, y: 0.1, width: 0.4, height: 0.3)),
+                ControllerLayoutItem(controlID: "other", frame: LayoutRect(x: 0.55, y: 0.1, width: 0.4, height: 0.3)),
             ]
         )
         XCTAssertThrowsError(try SchemaValidator.validate(document))
@@ -189,7 +202,7 @@ final class SchemaValidatorTests: XCTestCase {
     private func makeDocument(
         controls: [ControlDefinition] = [.button(id: "next", label: "Next")],
         items: [ControllerLayoutItem] = [
-            ControllerLayoutItem(controlID: "next", columnSpan: 1, rowSpan: 1),
+            ControllerLayoutItem(controlID: "next", frame: LayoutRect(x: 0.1, y: 0.35, width: 0.8, height: 0.3)),
         ],
         landscapeItems: [ControllerLayoutItem]? = nil,
         bindings: [ControlBinding]? = nil
@@ -205,8 +218,8 @@ final class SchemaValidatorTests: XCTestCase {
             ),
             preferredOrientation: .portrait,
             layouts: ControllerLayouts(
-                portrait: ControllerLayout(columns: 1, items: items),
-                landscape: ControllerLayout(columns: 1, items: landscapeItems ?? items)
+                portrait: ControllerLayout(items: items),
+                landscape: ControllerLayout(items: landscapeItems ?? items)
             ),
             controls: controls,
             bindings: bindings ?? [ControlBinding(
