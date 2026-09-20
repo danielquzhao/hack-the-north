@@ -747,6 +747,10 @@ private extension MacOverlayView {
         }
     }
 
+    var showsMultiplayerEditor: Bool {
+        editorState.playerCount > 1 || (editorState.sessionPack?.seatCount ?? 0) > 1
+    }
+
     var seatSwitcher: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("SEATS")
@@ -978,8 +982,10 @@ private extension MacOverlayView {
             case .controls:
                 if let draft {
                     VStack(alignment: .leading, spacing: 12) {
-                        seatSwitcher
-                        Divider()
+                        if showsMultiplayerEditor {
+                            seatSwitcher
+                            Divider()
+                        }
                         inspector(draft)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                             .disabled(!canEditLayout)
@@ -1241,7 +1247,11 @@ private extension MacOverlayView {
                     }
 
                     Divider()
-                    Text("ACTION · \(editorState.sessionPack?.seat(at: editorState.selectedSeatIndex)?.label ?? "Seat")")
+                    Text(
+                        showsMultiplayerEditor
+                            ? "ACTION · \(editorState.sessionPack?.seat(at: editorState.selectedSeatIndex)?.label ?? "Seat")"
+                            : "ACTION"
+                    )
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     actionInspector(id)
