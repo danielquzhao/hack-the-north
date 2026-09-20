@@ -1,7 +1,7 @@
 import Foundation
 
 struct ControllerDocument: Codable, Equatable, Sendable, Identifiable {
-    static let currentSchemaVersion = 6
+    static let currentSchemaVersion = 7
 
     let schemaVersion: Int
     let id: UUID
@@ -842,6 +842,36 @@ struct MouseMoveAction: Codable, Equatable, Sendable {
     let deadZone: Double
 }
 
+enum JoystickDirection: String, Codable, CaseIterable, Equatable, Sendable {
+    case up, down, left, right
+}
+
+struct DirectionalKeysAction: Codable, Equatable, Sendable {
+    let up: KeyChordAction
+    let down: KeyChordAction
+    let left: KeyChordAction
+    let right: KeyChordAction
+    let deadZone: Double
+
+    func chord(for direction: JoystickDirection) -> KeyChordAction {
+        switch direction {
+        case .up: up
+        case .down: down
+        case .left: left
+        case .right: right
+        }
+    }
+
+    func activeDirections(for value: Vector2Value) -> Set<JoystickDirection> {
+        var directions = Set<JoystickDirection>()
+        if value.y > deadZone { directions.insert(.up) }
+        if value.y < -deadZone { directions.insert(.down) }
+        if value.x < -deadZone { directions.insert(.left) }
+        if value.x > deadZone { directions.insert(.right) }
+        return directions
+    }
+}
+
 enum MouseButton: String, Codable, CaseIterable, Equatable, Sendable {
     case left
     case right
@@ -862,6 +892,7 @@ struct ScrollAction: Codable, Equatable, Sendable {
 enum ActionCapabilityID: String, Codable, CaseIterable, Equatable, Sendable {
     case keyChord
     case mouseMove
+    case directionalKeys
     case mouseDrag
     case scroll
 }
@@ -869,6 +900,7 @@ enum ActionCapabilityID: String, Codable, CaseIterable, Equatable, Sendable {
 enum ActionDefinition: Equatable, Sendable {
     case keyChord(KeyChordAction)
     case mouseMove(MouseMoveAction)
+    case directionalKeys(DirectionalKeysAction)
     case mouseDrag(MouseDragAction)
     case scroll(ScrollAction)
 
@@ -876,7 +908,7 @@ enum ActionDefinition: Equatable, Sendable {
         switch self {
         case .keyChord:
             [.none]
-        case .mouseMove, .mouseDrag, .scroll:
+        case .mouseMove, .directionalKeys, .mouseDrag, .scroll:
             [.vector2]
         }
     }
@@ -887,6 +919,8 @@ enum ActionDefinition: Equatable, Sendable {
             .keyChord
         case .mouseMove:
             .mouseMove
+        case .directionalKeys:
+            .directionalKeys
         case .mouseDrag:
             .mouseDrag
         case .scroll:
@@ -908,6 +942,8 @@ extension ActionDefinition: Codable {
             self = .keyChord(try container.decode(KeyChordAction.self, forKey: .configuration))
         case .mouseMove:
             self = .mouseMove(try container.decode(MouseMoveAction.self, forKey: .configuration))
+        case .directionalKeys:
+            self = .directionalKeys(try container.decode(DirectionalKeysAction.self, forKey: .configuration))
         case .mouseDrag:
             self = .mouseDrag(try container.decode(MouseDragAction.self, forKey: .configuration))
         case .scroll:
@@ -923,6 +959,9 @@ extension ActionDefinition: Codable {
             try container.encode(configuration, forKey: .configuration)
         case .mouseMove(let configuration):
             try container.encode(ActionCapabilityID.mouseMove, forKey: .type)
+            try container.encode(configuration, forKey: .configuration)
+        case .directionalKeys(let configuration):
+            try container.encode(ActionCapabilityID.directionalKeys, forKey: .type)
             try container.encode(configuration, forKey: .configuration)
         case .mouseDrag(let configuration):
             try container.encode(ActionCapabilityID.mouseDrag, forKey: .type)

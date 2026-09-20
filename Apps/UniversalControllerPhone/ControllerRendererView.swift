@@ -289,6 +289,7 @@ private struct JoystickControlView: View {
     let onChange: (Vector2Value) -> Void
     @State private var offset: CGSize = .zero
     @State private var isDragging = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         GeometryReader { geometry in
@@ -317,7 +318,15 @@ private struct JoystickControlView: View {
                     .onEnded { _ in
                         offset = .zero
                         isDragging = false
+                        onChange(Vector2Value(x: 0, y: 0))
                     })
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active && isDragging {
+                offset = .zero
+                isDragging = false
+                onChange(Vector2Value(x: 0, y: 0))
+            }
         }
         .accessibilityLabel("\(label) thumbstick")
     }

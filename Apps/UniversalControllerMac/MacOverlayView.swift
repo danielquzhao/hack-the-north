@@ -1430,6 +1430,8 @@ private extension MacOverlayView {
     func actionInspector(_ id: String) -> some View {
         if let control = draft?.control(id: id), case .dpad = control.kind {
             dpadInspector(id)
+        } else if let control = draft?.control(id: id), case .joystick = control.kind {
+            joystickInspector(id)
         } else if let control = draft?.control(id: id), case .trackpad = control.kind {
             trackpadInspector(id)
         } else if let action = draft?.bindings.first(where: { $0.controlID == id })?.action {
@@ -1437,22 +1439,85 @@ private extension MacOverlayView {
             case .keyChord:
                 keyChordInspector(id)
             case .mouseMove:
-                Text("Move the Mac pointer")
-                    .font(.subheadline)
-                Stepper("Gain: \(Int(currentMouseMove(id).gain))", value: Binding(
-                    get: { currentMouseMove(id).gain },
-                    set: { setAction(id, .mouseMove(MouseMoveAction(gain: $0, deadZone: currentMouseMove(id).deadZone))) }
-                ), in: 1...40, step: 1)
-                VStack(alignment: .leading) {
-                    Text("Dead zone: \(currentMouseMove(id).deadZone, specifier: "%.2f")")
-                    Slider(value: Binding(
-                        get: { currentMouseMove(id).deadZone },
-                        set: { setAction(id, .mouseMove(MouseMoveAction(gain: currentMouseMove(id).gain, deadZone: $0))) }
-                    ), in: 0...0.5)
-                }
+                pointerInspector(id)
+            case .directionalKeys:
+                directionalJoystickInspector(id)
             case .mouseDrag, .scroll:
                 trackpadInspector(id)
             }
+        }
+    }
+
+    func joystickInspector(_ id: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("Joystick output", selection: Binding(
+                get: { isDirectionalJoystick(id) },
+                set: { directional in
+                    if directional {
+                        setAction(id, .directionalKeys(defaultDirectionalKeys()))
+                    } else {
+                        setAction(id, .mouseMove(MouseMoveAction(gain: 10, deadZone: 0.1)))
+                    }
+                }
+            )) {
+                Text("Pointer").tag(false)
+                Text("Directional keys").tag(true)
+            }
+            .pickerStyle(.segmented)
+
+            if isDirectionalJoystick(id) {
+                directionalJoystickInspector(id)
+            } else {
+                pointerInspector(id)
+            }
+        }
+    }
+
+    func pointerInspector(_ id: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Move the Mac pointer")
+                .font(.subheadline)
+            Stepper("Gain: \(Int(currentMouseMove(id).gain))", value: Binding(
+                get: { currentMouseMove(id).gain },
+                set: { setAction(id, .mouseMove(MouseMoveAction(gain: $0, deadZone: currentMouseMove(id).deadZone))) }
+            ), in: 1...40, step: 1)
+            Text("Dead zone: \(currentMouseMove(id).deadZone, specifier: "%.2f")")
+            Slider(value: Binding(
+                get: { currentMouseMove(id).deadZone },
+                set: { setAction(id, .mouseMove(MouseMoveAction(gain: currentMouseMove(id).gain, deadZone: $0))) }
+            ), in: 0...0.5)
+        }
+    }
+
+    func directionalJoystickInspector(_ id: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Hold keys while the stick is tilted. Diagonals hold two keys.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ForEach(JoystickDirection.allCases, id: \.self) { direction in
+                Text(direction.rawValue.uppercased())
+                    .font(.caption.weight(.semibold))
+                let captureID = "\(id)::joystick::\(direction.rawValue)"
+                ShortcutRecorderField(
+                    chord: currentDirectionalKeys(id).chord(for: direction),
+                    isRecording: editorState.capturingShortcutControlID == captureID,
+                    onStartRecording: { editorState.capturingShortcutControlID = captureID },
+                    onCancelRecording: {
+                        if editorState.capturingShortcutControlID == captureID {
+                            editorState.capturingShortcutControlID = nil
+                        }
+                    },
+                    onCapture: { captured in
+                        setJoystickChord(id, direction: direction, chord: captured)
+                        editorState.capturingShortcutControlID = nil
+                    }
+                )
+            }
+            Text("Dead zone: \(currentDirectionalKeys(id).deadZone, specifier: "%.2f")")
+            Slider(value: Binding(
+                get: { currentDirectionalKeys(id).deadZone },
+                set: { setJoystickDeadZone(id, deadZone: $0) }
+            ), in: 0...0.5)
         }
     }
 
@@ -1606,6 +1671,52 @@ private extension MacOverlayView {
             return MouseMoveAction(gain: 10, deadZone: 0.1)
         }
         return action
+    }
+
+    func isDirectionalJoystick(_ id: String) -> Bool {
+        guard let binding = draft?.binding(controlID: id, event: .changed) else { return false }
+        if case .directionalKeys = binding.action { return true }
+        return false
+    }
+
+    func defaultDirectionalKeys() -> DirectionalKeysAction {
+        DirectionalKeysAction(
+            up: KeyChordAction(key: .upArrow, modifiers: []),
+            down: KeyChordAction(key: .downArrow, modifiers: []),
+            left: KeyChordAction(key: .leftArrow, modifiers: []),
+            right: KeyChordAction(key: .rightArrow, modifiers: []),
+            deadZone: 0.2
+        )
+    }
+
+    func currentDirectionalKeys(_ id: String) -> DirectionalKeysAction {
+        guard let binding = draft?.binding(controlID: id, event: .changed),
+              case .directionalKeys(let action) = binding.action else {
+            return defaultDirectionalKeys()
+        }
+        return action
+    }
+
+    func setJoystickChord(_ id: String, direction: JoystickDirection, chord: KeyChordAction) {
+        let current = currentDirectionalKeys(id)
+        setAction(id, .directionalKeys(DirectionalKeysAction(
+            up: direction == .up ? chord : current.up,
+            down: direction == .down ? chord : current.down,
+            left: direction == .left ? chord : current.left,
+            right: direction == .right ? chord : current.right,
+            deadZone: current.deadZone
+        )), event: .changed)
+    }
+
+    func setJoystickDeadZone(_ id: String, deadZone: Double) {
+        let current = currentDirectionalKeys(id)
+        setAction(id, .directionalKeys(DirectionalKeysAction(
+            up: current.up,
+            down: current.down,
+            left: current.left,
+            right: current.right,
+            deadZone: deadZone
+        )), event: .changed)
     }
 
     func currentMouseDrag(_ id: String) -> MouseDragAction {

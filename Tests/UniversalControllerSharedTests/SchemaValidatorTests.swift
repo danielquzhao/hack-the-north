@@ -33,7 +33,7 @@ final class SchemaValidatorTests: XCTestCase {
                 events: [.changed],
                 displayName: "Joystick",
                 systemImage: "circle.circle",
-                summary: "Stick that moves the Mac pointer",
+                summary: "Move the pointer or hold directional keys",
                 defaultWidth: 0.36,
                 defaultHeight: 0.36,
                 occupiesLayout: true
@@ -66,6 +66,9 @@ final class SchemaValidatorTests: XCTestCase {
                 acceptedInputKinds: [.none]
             ), ActionCapabilityDescriptor(
                 id: .mouseMove,
+                acceptedInputKinds: [.vector2]
+            ), ActionCapabilityDescriptor(
+                id: .directionalKeys,
                 acceptedInputKinds: [.vector2]
             ), ActionCapabilityDescriptor(
                 id: .mouseDrag,
@@ -355,6 +358,56 @@ final class SchemaValidatorTests: XCTestCase {
                 controlID: "stick",
                 event: .changed,
                 action: .mouseMove(MouseMoveAction(gain: 1_000, deadZone: 0.1))
+            )]
+        )
+        XCTAssertThrowsError(try SchemaValidator.validate(document))
+    }
+
+    func testDirectionalJoystickSupportsDiagonalsAndReleasesAtCenter() throws {
+        let action = DirectionalKeysAction(
+            up: KeyChordAction(key: .letterW, modifiers: []),
+            down: KeyChordAction(key: .letterS, modifiers: []),
+            left: KeyChordAction(key: .letterA, modifiers: []),
+            right: KeyChordAction(key: .letterD, modifiers: []),
+            deadZone: 0.2
+        )
+        let document = makeDocument(
+            controls: [.joystick(id: "stick", label: "Move")],
+            items: [ControllerLayoutItem(
+                controlID: "stick",
+                frame: LayoutRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)
+            )],
+            bindings: [ControlBinding(
+                id: "stick-directions",
+                controlID: "stick",
+                event: .changed,
+                action: .directionalKeys(action)
+            )]
+        )
+        try SchemaValidator.validate(document)
+        XCTAssertEqual(action.activeDirections(for: Vector2Value(x: 0.7, y: 0.8)), [.up, .right])
+        XCTAssertEqual(action.activeDirections(for: Vector2Value(x: 0, y: 0)), [])
+        XCTAssertEqual(try JSONDecoder().decode(ControllerDocument.self, from: JSONEncoder().encode(document)), document)
+    }
+
+    func testDirectionalJoystickRejectsInvalidDeadZone() {
+        let document = makeDocument(
+            controls: [.joystick(id: "stick", label: "Move")],
+            items: [ControllerLayoutItem(
+                controlID: "stick",
+                frame: LayoutRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)
+            )],
+            bindings: [ControlBinding(
+                id: "stick-directions",
+                controlID: "stick",
+                event: .changed,
+                action: .directionalKeys(DirectionalKeysAction(
+                    up: KeyChordAction(key: .upArrow, modifiers: []),
+                    down: KeyChordAction(key: .downArrow, modifiers: []),
+                    left: KeyChordAction(key: .leftArrow, modifiers: []),
+                    right: KeyChordAction(key: .rightArrow, modifiers: []),
+                    deadZone: 0.9
+                ))
             )]
         )
         XCTAssertThrowsError(try SchemaValidator.validate(document))

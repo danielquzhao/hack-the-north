@@ -59,6 +59,29 @@ final class ControllerActionRouter {
         case .mouseMove(let action):
             guard case .vector2(let value) = event.value else { return }
             try MacActionExecutor.sendMouseMove(action, value: value, to: application)
+        case .directionalKeys(let action):
+            guard case .vector2(let value) = event.value else { return }
+            let activeDirections = action.activeDirections(for: value)
+            for direction in JoystickDirection.allCases where !activeDirections.contains(direction) {
+                let holdID = "\(event.controlID):joystick:\(direction.rawValue)"
+                guard let held = heldKeys.removeValue(forKey: holdID) else { continue }
+                if !heldKeys.values.contains(held) {
+                    MacActionExecutor.releaseKeyChord(held)
+                }
+            }
+            for direction in JoystickDirection.allCases where activeDirections.contains(direction) {
+                let holdID = "\(event.controlID):joystick:\(direction.rawValue)"
+                guard heldKeys[holdID] == nil else { continue }
+                let chord = action.chord(for: direction)
+                if !heldKeys.values.contains(chord) {
+                    try await MacActionExecutor.pressKeyChord(chord, to: application)
+                }
+                if active {
+                    heldKeys[holdID] = chord
+                } else if !heldKeys.values.contains(chord) {
+                    MacActionExecutor.releaseKeyChord(chord)
+                }
+            }
         case .mouseDrag(let action):
             guard case .vector2(let value) = event.value else { return }
             switch event.event {

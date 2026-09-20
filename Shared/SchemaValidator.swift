@@ -62,7 +62,7 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
                 events: [.changed],
                 displayName: "Joystick",
                 systemImage: "circle.circle",
-                summary: "Stick that moves the Mac pointer",
+                summary: "Move the pointer or hold directional keys",
                 defaultWidth: 0.36,
                 defaultHeight: 0.36,
                 occupiesLayout: true
@@ -97,6 +97,10 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
             ),
             ActionCapabilityDescriptor(
                 id: .mouseMove,
+                acceptedInputKinds: [.vector2]
+            ),
+            ActionCapabilityDescriptor(
+                id: .directionalKeys,
                 acceptedInputKinds: [.vector2]
             ),
             ActionCapabilityDescriptor(
@@ -231,6 +235,16 @@ enum SchemaValidator {
                       action.deadZone.isFinite, (0...0.5).contains(action.deadZone) else {
                     throw error("Mouse movement gain or dead zone is out of range.")
                 }
+            case .directionalKeys(let action):
+                guard action.deadZone.isFinite, (0...0.5).contains(action.deadZone) else {
+                    throw error("Joystick directional dead zone is out of range.")
+                }
+                for direction in JoystickDirection.allCases {
+                    let chord = action.chord(for: direction)
+                    guard Set(chord.modifiers).count == chord.modifiers.count else {
+                        throw error("Joystick shortcut modifiers cannot contain duplicates.")
+                    }
+                }
             case .mouseDrag(let action):
                 guard action.gain.isFinite, (1...40).contains(action.gain),
                       action.deadZone.isFinite, (0...0.5).contains(action.deadZone),
@@ -258,6 +272,17 @@ enum SchemaValidator {
                     guard case .keyChord = document.binding(controlID: control.id, event: event)?.action else {
                         throw error("D-pad needs a keyboard mapping for every direction.")
                     }
+                }
+            }
+            if case .joystick = control.kind {
+                guard let action = document.binding(controlID: control.id, event: .changed)?.action else {
+                    throw error("Joystick needs a pointer or directional mapping.")
+                }
+                switch action {
+                case .mouseMove, .directionalKeys:
+                    break
+                default:
+                    throw error("Joystick needs a pointer or directional mapping.")
                 }
             }
         }
