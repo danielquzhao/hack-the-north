@@ -330,6 +330,41 @@ enum SchemaValidator {
         return binding
     }
 
+    static func validate(_ pack: ControllerSessionPack) throws {
+        guard (1...ControllerSessionPack.maximumSeats).contains(pack.seats.count) else {
+            throw error("A session must contain between 1 and \(ControllerSessionPack.maximumSeats) seats.")
+        }
+        guard isValidDisplayText(pack.name, maximumLength: 80) else {
+            throw error("Session name must contain between 1 and 80 characters.")
+        }
+        let indices = pack.seats.map(\.index)
+        guard indices == Array(0..<pack.seats.count) else {
+            throw error("Seat indexes must be contiguous starting at 0.")
+        }
+        var controllerIDs = Set<UUID>()
+        let expectedTarget = pack.seats[0].controller.target
+        let expectedLayouts = pack.seats[0].controller.layouts
+        let expectedControls = pack.seats[0].controller.controls
+        let expectedOrientation = pack.seats[0].controller.preferredOrientation
+        for seat in pack.seats {
+            guard isValidDisplayText(seat.label, maximumLength: 40) else {
+                throw error("Seat \(seat.index + 1) has an invalid label.")
+            }
+            try validate(seat.controller)
+            guard controllerIDs.insert(seat.controller.id).inserted else {
+                throw error("Each seat needs a unique controller ID.")
+            }
+            guard seat.controller.target == expectedTarget else {
+                throw error("All seats must target the same Mac app.")
+            }
+            guard seat.controller.preferredOrientation == expectedOrientation,
+                  seat.controller.layouts == expectedLayouts,
+                  seat.controller.controls == expectedControls else {
+                throw error("All seats must share the same layout and controls.")
+            }
+        }
+    }
+
     private static func isValidIdentifier(_ identifier: String) -> Bool {
         guard (1...64).contains(identifier.count) else { return false }
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
