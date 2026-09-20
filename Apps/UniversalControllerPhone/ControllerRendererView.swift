@@ -1,3 +1,4 @@
+import CoreMotion
 import SwiftUI
 import UIKit
 
@@ -5,12 +6,20 @@ struct ControllerRendererView: View {
     let document: ControllerDocument
     let onEvent: (ControlDefinition, ControlEventKind, InputValue) -> Void
 
+    private var motionControls: [ControlDefinition] {
+        document.controls.filter {
+            if case .motion = $0.kind { return true }
+            return false
+        }
+    }
+
     var body: some View {
         GeometryReader { geometry in
             if orientationMatches(geometry.size) {
                 ZStack(alignment: .topLeading) {
                     ForEach(document.layout.items) { item in
-                        if let control = document.control(id: item.controlID) {
+                        if let control = document.control(id: item.controlID),
+                           control.kind.capabilityID != .motion {
                             let occupiesLayout = ControllerCapabilityCatalog.current.occupiesLayout(
                                 control.kind.capabilityID
                             )
@@ -27,6 +36,23 @@ struct ControllerRendererView: View {
                                 .allowsHitTesting(occupiesLayout)
                         }
                     }
+
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 8) {
+                                ForEach(motionControls) { control in
+                                    if case .motion = control.kind {
+                                        TiltControlView(label: control.label) { value in
+                                            onEvent(control, .changed, .vector2(value))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(4)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -77,6 +103,8 @@ struct ControllerRendererView: View {
             ) { value in
                 onEvent(control, .changed, .vector2(value))
             }
+        case .motion:
+            EmptyView()
         case .trackpad(let configuration):
             TrackpadControlView(
                 label: control.label,
@@ -292,5 +320,80 @@ private struct JoystickControlView: View {
                     })
         }
         .accessibilityLabel("\(label) thumbstick")
+    }
+}
+
+private struct TiltControlView: View {
+    let label: String
+    let onChange: (Vector2Value) -> Void
+    @StateObject private var motion = MotionInputSource()
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        TiltArtwork(label: label, isAvailable: motion.isAvailable)
+            .contentShape(Capsule())
+            .onTapGesture { motion.recenter() }
+            .onAppear { if scenePhase == .active { motion.start(onChange: onChange) } }
+            .onDisappear { motion.stop() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { motion.start(onChange: onChange) }
+                else { motion.stop() }
+            }
+            .accessibilityLabel("\(label) tilt")
+            .accessibilityHint("Tap to recenter")
+    }
+}
+
+@MainActor
+private final class MotionInputSource: ObservableObject {
+    @Published private(set) var isAvailable = true
+    private let manager = CMMotionManager()
+    private var currentRaw: Vector2Value?
+    private var neutral: Vector2Value?
+    private var onChange: ((Vector2Value) -> Void)?
+
+    func start(onChange: @escaping (Vector2Value) -> Void) {
+        self.onChange = onChange
+        guard !manager.isDeviceMotionActive else { return }
+        guard manager.isDeviceMotionAvailable else {
+            isAvailable = false
+            return
+        }
+        isAvailable = true
+        manager.deviceMotionUpdateInterval = 1.0 / 30.0
+        manager.startDeviceMotionUpdates(to: .main) { [weak self] data, error in
+            if error != nil {
+                Task { @MainActor [weak self] in self?.isAvailable = false }
+                return
+            }
+            guard let gravity = data?.gravity else { return }
+            let raw = Vector2Value(x: gravity.x, y: -gravity.y)
+            Task { @MainActor [weak self] in self?.receive(raw) }
+        }
+    }
+
+    func stop() {
+        manager.stopDeviceMotionUpdates()
+        onChange = nil
+        currentRaw = nil
+        neutral = nil
+    }
+
+    func recenter() {
+        neutral = currentRaw
+    }
+
+    private func receive(_ raw: Vector2Value) {
+        currentRaw = raw
+        if neutral == nil {
+            neutral = raw
+            return
+        }
+        guard let neutral else { return }
+        let value = Vector2Value(
+            x: min(1, max(-1, (raw.x - neutral.x) / 0.6)),
+            y: min(1, max(-1, (raw.y - neutral.y) / 0.6))
+        )
+        onChange?(value)
     }
 }

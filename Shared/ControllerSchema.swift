@@ -279,6 +279,7 @@ enum ControlCapabilityID: String, Codable, CaseIterable, Equatable, Sendable {
     case button
     case dpad
     case joystick
+    case motion
     case trackpad
 }
 
@@ -359,17 +360,26 @@ struct TrackpadControlConfiguration: Codable, Equatable, Sendable {
     let hapticsEnabled: Bool
 }
 
+enum MotionSource: String, Codable, CaseIterable, Equatable, Sendable {
+    case tilt
+}
+
+struct MotionControlConfiguration: Codable, Equatable, Sendable {
+    let source: MotionSource
+}
+
 enum ControlKind: Equatable, Sendable {
     case button(ButtonControlConfiguration)
     case dpad(DPadControlConfiguration)
     case joystick(JoystickControlConfiguration)
+    case motion(MotionControlConfiguration)
     case trackpad(TrackpadControlConfiguration)
 
     var outputKind: InputValueKind {
         switch self {
         case .button, .dpad:
             .none
-        case .joystick, .trackpad:
+        case .joystick, .motion, .trackpad:
             .vector2
         }
     }
@@ -382,6 +392,8 @@ enum ControlKind: Equatable, Sendable {
             .dpad
         case .joystick:
             .joystick
+        case .motion:
+            .motion
         case .trackpad:
             .trackpad
         }
@@ -394,7 +406,7 @@ enum ControlKind: Equatable, Sendable {
         case .dpad:
             [.upBegan, .upEnded, .downBegan, .downEnded,
              .leftBegan, .leftEnded, .rightBegan, .rightEnded]
-        case .joystick:
+        case .joystick, .motion:
             [.changed]
         case .trackpad:
             [.began, .changed, .ended, .pinchChanged]
@@ -443,6 +455,14 @@ struct ControlDefinition: Equatable, Sendable, Identifiable {
         )
     }
 
+    static func tilt(id: String, label: String) -> ControlDefinition {
+        ControlDefinition(
+            id: id,
+            label: label,
+            kind: .motion(MotionControlConfiguration(source: .tilt))
+        )
+    }
+
     static func trackpad(id: String, label: String) -> ControlDefinition {
         ControlDefinition(
             id: id,
@@ -479,6 +499,11 @@ extension ControlDefinition: Codable {
                 JoystickControlConfiguration.self,
                 forKey: .configuration
             ))
+        case .motion:
+            kind = .motion(try container.decode(
+                MotionControlConfiguration.self,
+                forKey: .configuration
+            ))
         case .trackpad:
             kind = .trackpad(try container.decode(
                 TrackpadControlConfiguration.self,
@@ -501,6 +526,9 @@ extension ControlDefinition: Codable {
             try container.encode(configuration, forKey: .configuration)
         case .joystick(let configuration):
             try container.encode(ControlCapabilityID.joystick, forKey: .type)
+            try container.encode(configuration, forKey: .configuration)
+        case .motion(let configuration):
+            try container.encode(ControlCapabilityID.motion, forKey: .type)
             try container.encode(configuration, forKey: .configuration)
         case .trackpad(let configuration):
             try container.encode(ControlCapabilityID.trackpad, forKey: .type)
