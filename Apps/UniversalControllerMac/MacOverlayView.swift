@@ -603,9 +603,18 @@ private extension MacOverlayView {
 
     func updateFrame(_ id: String, _ frame: LayoutRect) {
         guard let draft, canEditLayout else { return }
+        let obstacles = draft.layout.items
+            .filter { $0.controlID != id }
+            .map(\.frame)
+        let previous = draft.layout.items.first { $0.controlID == id }?.frame ?? frame
+        let resolved = LayoutEditing.resolvedOrPrevious(
+            frame,
+            previous: previous,
+            avoiding: obstacles
+        )
         let items = draft.layout.items.map { item in
             item.controlID == id
-                ? ControllerLayoutItem(controlID: id, frame: frame.clamped())
+                ? ControllerLayoutItem(controlID: id, frame: resolved)
                 : item
         }
         replaceDraft(layout: ControllerLayout(items: items))
@@ -785,6 +794,9 @@ private extension MacOverlayView {
                             control: control,
                             frame: item.frame,
                             canvasSize: size,
+                            obstacles: draft.layout.items
+                                .filter { $0.controlID != control.id }
+                                .map(\.frame),
                             isSelected: selectedControlID == control.id,
                             color: previewColor(for: control),
                             onSelect: { selectedControlID = control.id },
@@ -796,6 +808,8 @@ private extension MacOverlayView {
                 }
             }
             .frame(width: size.width, height: size.height)
+            .coordinateSpace(name: "previewCanvas")
+            .clipped()
             .contentShape(Rectangle())
             .onTapGesture { selectedControlID = nil }
         }
@@ -845,9 +859,6 @@ private extension MacOverlayView {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text("Size \(Int(frame.width * 100))% × \(Int(frame.height * 100))%")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("Drag the control in the preview to move it. Drag the corner handle to resize.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -1029,34 +1040,248 @@ private struct EmptyPhonePreview: View {
     }
 }
 
+private enum ResizeHandle: CaseIterable, Hashable {
+    case topLeft, top, topRight, left, right, bottomLeft, bottom, bottomRight
+
+    var movesLeft: Bool {
+        switch self {
+        case .topLeft, .left, .bottomLeft: true
+        default: false
+        }
+    }
+
+    var movesRight: Bool {
+        switch self {
+        case .topRight, .right, .bottomRight: true
+        default: false
+        }
+    }
+
+    var movesTop: Bool {
+        switch self {
+        case .topLeft, .top, .topRight: true
+        default: false
+        }
+    }
+
+    var movesBottom: Bool {
+        switch self {
+        case .bottomLeft, .bottom, .bottomRight: true
+        default: false
+        }
+    }
+
+    var isCorner: Bool {
+        switch self {
+        case .topLeft, .topRight, .bottomLeft, .bottomRight: true
+        default: false
+        }
+    }
+}
+
+private enum LayoutEditing {
+    static let gap = 0.012
+    static let minimumSize = 0.08
+
+    static func overlaps(_ a: LayoutRect, _ b: LayoutRect, gap: Double = gap) -> Bool {
+        a.x < b.maxX + gap &&
+        a.maxX + gap > b.x &&
+        a.y < b.maxY + gap &&
+        a.maxY + gap > b.y
+    }
+
+    static func pixelRect(for frame: LayoutRect, in canvasSize: CGSize) -> CGRect {
+        let clamped = frame.clamped(minimumSize: minimumSize)
+        return CGRect(
+            x: clamped.x * canvasSize.width,
+            y: clamped.y * canvasSize.height,
+            width: clamped.width * canvasSize.width,
+            height: clamped.height * canvasSize.height
+        )
+    }
+
+    static func hitTestHandle(localPoint: CGPoint, size: CGSize) -> ResizeHandle? {
+        // Keep a real move target in the middle — edge band scales with control size.
+        let inset = min(10, max(5, min(size.width, size.height) * 0.18))
+        guard size.width > inset * 2.5, size.height > inset * 2.5 else {
+            // Tiny controls: corners only, so the center stays draggable.
+            let corner = inset * 1.2
+            let nearLeft = localPoint.x <= corner
+            let nearRight = localPoint.x >= size.width - corner
+            let nearTop = localPoint.y <= corner
+            let nearBottom = localPoint.y >= size.height - corner
+            switch (nearTop, nearBottom, nearLeft, nearRight) {
+            case (true, false, true, false): return .topLeft
+            case (true, false, false, true): return .topRight
+            case (false, true, true, false): return .bottomLeft
+            case (false, true, false, true): return .bottomRight
+            default: return nil
+            }
+        }
+
+        let nearLeft = localPoint.x <= inset
+        let nearRight = localPoint.x >= size.width - inset
+        let nearTop = localPoint.y <= inset
+        let nearBottom = localPoint.y >= size.height - inset
+
+        switch (nearTop, nearBottom, nearLeft, nearRight) {
+        case (true, false, true, false): return .topLeft
+        case (true, false, false, true): return .topRight
+        case (false, true, true, false): return .bottomLeft
+        case (false, true, false, true): return .bottomRight
+        case (true, false, false, false): return .top
+        case (false, true, false, false): return .bottom
+        case (false, false, true, false): return .left
+        case (false, false, false, true): return .right
+        default: return nil
+        }
+    }
+
+    static func resized(
+        from origin: LayoutRect,
+        handle: ResizeHandle,
+        dx: Double,
+        dy: Double
+    ) -> LayoutRect {
+        var x = origin.x
+        var y = origin.y
+        var width = origin.width
+        var height = origin.height
+
+        if handle.movesLeft {
+            x = origin.x + dx
+            width = origin.width - dx
+        } else if handle.movesRight {
+            width = origin.width + dx
+        }
+
+        if handle.movesTop {
+            y = origin.y + dy
+            height = origin.height - dy
+        } else if handle.movesBottom {
+            height = origin.height + dy
+        }
+
+        if width < minimumSize {
+            if handle.movesLeft {
+                x = origin.maxX - minimumSize
+            }
+            width = minimumSize
+        }
+        if height < minimumSize {
+            if handle.movesTop {
+                y = origin.maxY - minimumSize
+            }
+            height = minimumSize
+        }
+
+        if x < 0 {
+            if handle.movesLeft { width += x }
+            x = 0
+        }
+        if y < 0 {
+            if handle.movesTop { height += y }
+            y = 0
+        }
+        if x + width > 1 {
+            if handle.movesRight {
+                width = 1 - x
+            } else if handle.movesLeft {
+                x = 1 - width
+            } else {
+                width = 1 - x
+            }
+        }
+        if y + height > 1 {
+            if handle.movesBottom {
+                height = 1 - y
+            } else if handle.movesTop {
+                y = 1 - height
+            } else {
+                height = 1 - y
+            }
+        }
+
+        return LayoutRect(
+            x: x,
+            y: y,
+            width: max(minimumSize, min(1, width)),
+            height: max(minimumSize, min(1, height))
+        ).clamped(minimumSize: minimumSize)
+    }
+
+    /// Keeps `proposed` when clear; otherwise slides on one axis or stays put.
+    /// If already overlapping, allow free movement (still canvas-clamped) so controls can untangle.
+    static func resolvedOrPrevious(
+        _ proposed: LayoutRect,
+        previous: LayoutRect,
+        avoiding obstacles: [LayoutRect]
+    ) -> LayoutRect {
+        let clamped = proposed.clamped(minimumSize: minimumSize)
+        let previousOverlapping = obstacles.contains { overlaps(previous, $0) }
+        if previousOverlapping {
+            return clamped
+        }
+        if !obstacles.contains(where: { overlaps(clamped, $0) }) {
+            return clamped
+        }
+
+        let xOnly = LayoutRect(
+            x: proposed.x,
+            y: previous.y,
+            width: proposed.width,
+            height: previous.height
+        ).clamped(minimumSize: minimumSize)
+        if !obstacles.contains(where: { overlaps(xOnly, $0) }) {
+            return xOnly
+        }
+
+        let yOnly = LayoutRect(
+            x: previous.x,
+            y: proposed.y,
+            width: previous.width,
+            height: proposed.height
+        ).clamped(minimumSize: minimumSize)
+        if !obstacles.contains(where: { overlaps(yOnly, $0) }) {
+            return yOnly
+        }
+
+        return previous.clamped(minimumSize: minimumSize)
+    }
+}
+
 private struct EditablePreviewControl: View {
     let control: ControlDefinition
     let frame: LayoutRect
     let canvasSize: CGSize
+    let obstacles: [LayoutRect]
     let isSelected: Bool
     let color: Color
     let onSelect: () -> Void
     let onChangeFrame: (LayoutRect) -> Void
 
-    @State private var moveOrigin: LayoutRect?
-    @State private var resizeOrigin: LayoutRect?
+    @State private var liveFrame: LayoutRect?
+    @State private var gestureOrigin: LayoutRect?
+    @State private var activeHandle: ResizeHandle?
+
+    private var displayed: LayoutRect {
+        (liveFrame ?? frame).clamped(minimumSize: LayoutEditing.minimumSize)
+    }
 
     private var pixelFrame: CGRect {
-        CGRect(
-            x: frame.x * canvasSize.width,
-            y: frame.y * canvasSize.height,
-            width: max(24, frame.width * canvasSize.width),
-            height: max(24, frame.height * canvasSize.height)
-        )
+        LayoutEditing.pixelRect(for: displayed, in: canvasSize)
     }
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
+        ZStack {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(color.opacity(isSelected ? 0.95 : 0.82))
                 .overlay {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(.white.opacity(isSelected ? 0.95 : 0.25), lineWidth: isSelected ? 2 : 1)
+                        .strokeBorder(
+                            .white.opacity(isSelected ? 0.95 : 0.25),
+                            lineWidth: isSelected ? 2 : 1
+                        )
                 }
                 .shadow(color: .black.opacity(0.25), radius: isSelected ? 8 : 3, y: 2)
 
@@ -1064,70 +1289,110 @@ private struct EditablePreviewControl: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
-                .padding(8)
+                .padding(10)
                 .minimumScaleFactor(0.6)
                 .lineLimit(2)
+                .allowsHitTesting(false)
 
             if isSelected {
-                Circle()
-                    .fill(.white)
-                    .frame(width: 12, height: 12)
-                    .overlay {
-                        Circle()
-                            .strokeBorder(.black.opacity(0.25), lineWidth: 1)
-                    }
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
-                    .highPriorityGesture(resizeGesture)
+                ForEach(ResizeHandle.allCases, id: \.self) { handle in
+                    handleView(handle)
+                        .allowsHitTesting(false)
+                }
             }
         }
-        .frame(width: pixelFrame.width, height: pixelFrame.height)
+        .frame(width: max(1, pixelFrame.width), height: max(1, pixelFrame.height))
+        .contentShape(Rectangle())
+        // `position` keeps hit-testing aligned with the drawn control (unlike `offset`).
         .position(x: pixelFrame.midX, y: pixelFrame.midY)
-        .gesture(moveGesture)
+        .zIndex(isSelected ? 10 : 0)
+        .gesture(canvasDragGesture)
         .onTapGesture(perform: onSelect)
     }
 
-    private var moveGesture: some Gesture {
-        DragGesture(minimumDistance: 3)
-            .onChanged { value in
-                if moveOrigin == nil {
-                    onSelect()
-                    moveOrigin = frame
-                }
-                guard let origin = moveOrigin, canvasSize.width > 0, canvasSize.height > 0 else { return }
-                onChangeFrame(
-                    LayoutRect(
-                        x: origin.x + value.translation.width / canvasSize.width,
-                        y: origin.y + value.translation.height / canvasSize.height,
-                        width: origin.width,
-                        height: origin.height
-                    ).clamped()
-                )
+    @ViewBuilder
+    private func handleView(_ handle: ResizeHandle) -> some View {
+        let size: CGFloat = handle.isCorner ? 11 : 7
+        Circle()
+            .fill(.white)
+            .frame(width: size, height: size)
+            .overlay {
+                Circle()
+                    .strokeBorder(.black.opacity(0.22), lineWidth: 1)
             }
-            .onEnded { _ in
-                moveOrigin = nil
-            }
+            .position(handlePosition(handle))
     }
 
-    private var resizeGesture: some Gesture {
-        DragGesture(minimumDistance: 1)
+    private func handlePosition(_ handle: ResizeHandle) -> CGPoint {
+        let width = max(1, pixelFrame.width)
+        let height = max(1, pixelFrame.height)
+        switch handle {
+        case .topLeft: return CGPoint(x: 0, y: 0)
+        case .top: return CGPoint(x: width / 2, y: 0)
+        case .topRight: return CGPoint(x: width, y: 0)
+        case .left: return CGPoint(x: 0, y: height / 2)
+        case .right: return CGPoint(x: width, y: height / 2)
+        case .bottomLeft: return CGPoint(x: 0, y: height)
+        case .bottom: return CGPoint(x: width / 2, y: height)
+        case .bottomRight: return CGPoint(x: width, y: height)
+        }
+    }
+
+    private var canvasDragGesture: some Gesture {
+        DragGesture(minimumDistance: 2, coordinateSpace: .named("previewCanvas"))
             .onChanged { value in
-                if resizeOrigin == nil {
+                if gestureOrigin == nil {
                     onSelect()
-                    resizeOrigin = frame
+                    let origin = frame.clamped(minimumSize: LayoutEditing.minimumSize)
+                    gestureOrigin = origin
+                    liveFrame = origin
+                    let startRect = LayoutEditing.pixelRect(for: origin, in: canvasSize)
+                    let local = CGPoint(
+                        x: value.startLocation.x - startRect.minX,
+                        y: value.startLocation.y - startRect.minY
+                    )
+                    activeHandle = LayoutEditing.hitTestHandle(
+                        localPoint: local,
+                        size: startRect.size
+                    )
                 }
-                guard let origin = resizeOrigin, canvasSize.width > 0, canvasSize.height > 0 else { return }
-                onChangeFrame(
-                    LayoutRect(
-                        x: origin.x,
-                        y: origin.y,
-                        width: origin.width + value.translation.width / canvasSize.width,
-                        height: origin.height + value.translation.height / canvasSize.height
-                    ).clamped()
+
+                guard let origin = gestureOrigin,
+                      canvasSize.width > 0,
+                      canvasSize.height > 0 else { return }
+
+                let dx = (value.location.x - value.startLocation.x) / canvasSize.width
+                let dy = (value.location.y - value.startLocation.y) / canvasSize.height
+
+                let proposed: LayoutRect
+                if let handle = activeHandle {
+                    proposed = LayoutEditing.resized(from: origin, handle: handle, dx: dx, dy: dy)
+                } else {
+                    proposed = LayoutRect(
+                        x: origin.x + dx,
+                        y: origin.y + dy,
+                        width: origin.width,
+                        height: origin.height
+                    )
+                }
+
+                let next = LayoutEditing.resolvedOrPrevious(
+                    proposed,
+                    previous: liveFrame ?? origin,
+                    avoiding: obstacles
                 )
+                if liveFrame != next {
+                    liveFrame = next
+                    onChangeFrame(next)
+                }
             }
             .onEnded { _ in
-                resizeOrigin = nil
+                if let liveFrame {
+                    onChangeFrame(liveFrame)
+                }
+                gestureOrigin = nil
+                liveFrame = nil
+                activeHandle = nil
             }
     }
 }
