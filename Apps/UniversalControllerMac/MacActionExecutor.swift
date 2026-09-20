@@ -100,6 +100,9 @@ enum MacActionExecutor {
         guard CGPreflightPostEventAccess() else {
             throw MacActionError.keyboardControlRequired
         }
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier == application.processIdentifier {
+            return
+        }
         guard application.activate() else {
             throw MacActionError.activationFailed
         }

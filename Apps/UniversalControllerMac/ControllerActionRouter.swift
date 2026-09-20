@@ -82,6 +82,13 @@ final class ControllerActionRouter {
                     MacActionExecutor.releaseKeyChord(chord)
                 }
             }
+        case .axisKeys(let action):
+            guard case .vector2(let value) = event.value else { return }
+            try await updateAxisKeys(
+                action,
+                value: value,
+                controlID: event.controlID
+            )
         case .mouseDrag(let action):
             guard case .vector2(let value) = event.value else { return }
             switch event.event {
@@ -126,5 +133,57 @@ final class ControllerActionRouter {
     func cancelActiveDrag() {
         if let activeDrag { MacActionExecutor.endMouseDrag(activeDrag.action) }
         activeDrag = nil
+    }
+
+    private func updateAxisKeys(
+        _ action: AxisKeysAction,
+        value: Vector2Value,
+        controlID: String
+    ) async throws {
+        let leftID = "\(controlID):axisLeft"
+        let rightID = "\(controlID):axisRight"
+        let wantLeft = value.x < -action.deadZone
+        let wantRight = value.x > action.deadZone
+
+        if !wantLeft, let held = heldKeys.removeValue(forKey: leftID) {
+            if !heldKeys.values.contains(held) {
+                MacActionExecutor.releaseKeyChord(held)
+            }
+        }
+        if !wantRight, let held = heldKeys.removeValue(forKey: rightID) {
+            if !heldKeys.values.contains(held) {
+                MacActionExecutor.releaseKeyChord(held)
+            }
+        }
+
+        // Prefer the stronger lean if both somehow cross the threshold.
+        if wantLeft && wantRight {
+            if value.x < 0 {
+                try await pressAxisKey(action.left, holdID: leftID)
+            } else {
+                try await pressAxisKey(action.right, holdID: rightID)
+            }
+            return
+        }
+        if wantLeft {
+            try await pressAxisKey(action.left, holdID: leftID)
+        }
+        if wantRight {
+            try await pressAxisKey(action.right, holdID: rightID)
+        }
+    }
+
+    private func pressAxisKey(_ action: KeyChordAction, holdID: String) async throws {
+        guard heldKeys[holdID] == nil else { return }
+        if heldKeys.values.contains(action) {
+            heldKeys[holdID] = action
+            return
+        }
+        try await MacActionExecutor.pressKeyChord(action, to: application)
+        if active {
+            heldKeys[holdID] = action
+        } else {
+            MacActionExecutor.releaseKeyChord(action)
+        }
     }
 }

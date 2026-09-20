@@ -370,7 +370,11 @@ final class OverlayPanelController {
            abs(value.y) <= action.deadZone {
             return
         }
-        close()
+        // Continuous tilt steer must keep posting while keys are held; only dismiss
+        // the overlay when it is actually visible so we do not thrash focus prep.
+        if panel != nil {
+            close()
+        }
         do {
             try await router.handle(event)
         } catch {

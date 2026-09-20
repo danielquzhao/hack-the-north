@@ -43,7 +43,7 @@ final class SchemaValidatorTests: XCTestCase {
                 events: [.changed],
                 displayName: "Tilt",
                 systemImage: "gyroscope",
-                summary: "Phone tilt moves the Mac pointer",
+                summary: "Phone tilt steers with keys or moves the pointer",
                 defaultWidth: 0.16,
                 defaultHeight: 0.12,
                 occupiesLayout: false
@@ -75,6 +75,9 @@ final class SchemaValidatorTests: XCTestCase {
                 acceptedInputKinds: [.vector2]
             ), ActionCapabilityDescriptor(
                 id: .scroll,
+                acceptedInputKinds: [.vector2]
+            ), ActionCapabilityDescriptor(
+                id: .axisKeys,
                 acceptedInputKinds: [.vector2]
             )]
         )
@@ -312,8 +315,12 @@ final class SchemaValidatorTests: XCTestCase {
                                action: .keyChord(KeyChordAction(key: .rightArrow, modifiers: []))),
                 ControlBinding(id: "stick-move", controlID: "stick", event: .changed,
                                action: .mouseMove(MouseMoveAction(gain: 14, deadZone: 0.1))),
-                ControlBinding(id: "tilt-move", controlID: "tilt", event: .changed,
-                               action: .mouseMove(MouseMoveAction(gain: 9, deadZone: 0.18))),
+                ControlBinding(id: "tilt-steer", controlID: "tilt", event: .changed,
+                               action: .axisKeys(AxisKeysAction(
+                                   left: KeyChordAction(key: .leftArrow, modifiers: []),
+                                   right: KeyChordAction(key: .rightArrow, modifiers: []),
+                                   deadZone: 0.18
+                               ))),
             ]
         )
         try SchemaValidator.validate(document)
@@ -332,7 +339,7 @@ final class SchemaValidatorTests: XCTestCase {
             timestamp: Date(),
             value: .vector2(Vector2Value(x: 0.4, y: -0.2))
         )
-        XCTAssertEqual(try SchemaValidator.binding(for: motionEvent, in: document).id, "tilt-move")
+        XCTAssertEqual(try SchemaValidator.binding(for: motionEvent, in: document).id, "tilt-steer")
 
         let invalidEvent = ControlEvent(
             controllerID: document.id,
@@ -344,6 +351,23 @@ final class SchemaValidatorTests: XCTestCase {
             value: .vector2(Vector2Value(x: 2, y: 0))
         )
         XCTAssertThrowsError(try SchemaValidator.binding(for: invalidEvent, in: document))
+    }
+
+    func testTiltPointerModeValidates() throws {
+        let document = makeDocument(
+            controls: [.tilt(id: "tilt", label: "Look")],
+            items: [ControllerLayoutItem(
+                controlID: "tilt",
+                frame: ControllerCapabilityCatalog.offCanvasSensorFrame
+            )],
+            bindings: [ControlBinding(
+                id: "tilt-pointer",
+                controlID: "tilt",
+                event: .changed,
+                action: .mouseMove(MouseMoveAction(gain: 12, deadZone: 0.18))
+            )]
+        )
+        try SchemaValidator.validate(document)
     }
 
     func testInvalidPointerGainIsRejected() {

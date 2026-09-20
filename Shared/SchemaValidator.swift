@@ -73,7 +73,7 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
                 events: [.changed],
                 displayName: "Tilt",
                 systemImage: "gyroscope",
-                summary: "Phone tilt moves the Mac pointer",
+                summary: "Phone tilt steers with keys or moves the pointer",
                 defaultWidth: 0.16,
                 defaultHeight: 0.12,
                 occupiesLayout: false
@@ -109,6 +109,10 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
             ),
             ActionCapabilityDescriptor(
                 id: .scroll,
+                acceptedInputKinds: [.vector2]
+            ),
+            ActionCapabilityDescriptor(
+                id: .axisKeys,
                 acceptedInputKinds: [.vector2]
             ),
         ],
@@ -255,12 +259,26 @@ enum SchemaValidator {
                 guard action.gain.isFinite, (1...40).contains(action.gain) else {
                     throw error("Scroll gain is out of range.")
                 }
+            case .axisKeys(let action):
+                guard action.deadZone.isFinite, (0...0.5).contains(action.deadZone),
+                      Set(action.left.modifiers).count == action.left.modifiers.count,
+                      Set(action.right.modifiers).count == action.right.modifiers.count else {
+                    throw error("Axis key settings are invalid.")
+                }
             case .keyChord:
                 break
             }
         }
 
         for control in document.controls {
+            if case .motion = control.kind {
+                switch document.binding(controlID: control.id, event: .changed)?.action {
+                case .axisKeys?, .mouseMove?:
+                    break
+                default:
+                    throw error("Tilt needs steer keys or pointer movement.")
+                }
+            }
             if case .trackpad = control.kind {
                 guard case .mouseDrag = document.binding(controlID: control.id, event: .changed)?.action,
                       case .scroll = document.binding(controlID: control.id, event: .pinchChanged)?.action else {
@@ -448,12 +466,23 @@ extension ControlCapabilityDescriptor {
                     action: .keyChord(KeyChordAction(key: key, modifiers: []))
                 )
             }
-        case .joystick, .motion:
+        case .joystick:
             [ControlBinding(
                 id: "\(controlID)-move",
                 controlID: controlID,
                 event: .changed,
                 action: .mouseMove(MouseMoveAction(gain: 12, deadZone: 0.1))
+            )]
+        case .motion:
+            [ControlBinding(
+                id: "\(controlID)-steer",
+                controlID: controlID,
+                event: .changed,
+                action: .axisKeys(AxisKeysAction(
+                    left: KeyChordAction(key: .leftArrow, modifiers: []),
+                    right: KeyChordAction(key: .rightArrow, modifiers: []),
+                    deadZone: 0.18
+                ))
             )]
         case .trackpad:
             [

@@ -44,7 +44,10 @@ struct ControllerRendererView: View {
                             VStack(alignment: .trailing, spacing: 8) {
                                 ForEach(motionControls) { control in
                                     if case .motion = control.kind {
-                                        TiltControlView(label: control.label) { value in
+                                        TiltControlView(
+                                            label: control.label,
+                                            preferredOrientation: document.preferredOrientation
+                                        ) { value in
                                             onEvent(control, .changed, .vector2(value))
                                         }
                                     }
@@ -334,6 +337,7 @@ private struct JoystickControlView: View {
 
 private struct TiltControlView: View {
     let label: String
+    let preferredOrientation: ControllerOrientation
     let onChange: (Vector2Value) -> Void
     @StateObject private var motion = MotionInputSource()
     @Environment(\.scenePhase) private var scenePhase
@@ -342,8 +346,15 @@ private struct TiltControlView: View {
         TiltArtwork(label: label, isAvailable: motion.isAvailable)
             .contentShape(Capsule())
             .onTapGesture { motion.recenter() }
-            .onAppear { if scenePhase == .active { motion.start(onChange: onChange) } }
+            .onAppear {
+                motion.preferredOrientation = preferredOrientation
+                if scenePhase == .active { motion.start(onChange: onChange) }
+            }
             .onDisappear { motion.stop() }
+            .onChange(of: preferredOrientation) { _, orientation in
+                motion.preferredOrientation = orientation
+                motion.recenter()
+            }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { motion.start(onChange: onChange) }
                 else { motion.stop() }
@@ -356,6 +367,7 @@ private struct TiltControlView: View {
 @MainActor
 private final class MotionInputSource: ObservableObject {
     @Published private(set) var isAvailable = true
+    var preferredOrientation: ControllerOrientation = .portrait
     private let manager = CMMotionManager()
     private var currentRaw: Vector2Value?
     private var neutral: Vector2Value?
@@ -376,8 +388,10 @@ private final class MotionInputSource: ObservableObject {
                 return
             }
             guard let gravity = data?.gravity else { return }
-            let raw = Vector2Value(x: gravity.x, y: -gravity.y)
-            Task { @MainActor [weak self] in self?.receive(raw) }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.receive(self.steerVector(from: gravity))
+            }
         }
     }
 
@@ -392,6 +406,17 @@ private final class MotionInputSource: ObservableObject {
         neutral = currentRaw
     }
 
+    /// Screen-relative lean: portrait uses device X; landscape uses device Y so
+    /// rolling the phone left/right while looking at a landscape UI actually steers.
+    private func steerVector(from gravity: CMAcceleration) -> Vector2Value {
+        switch preferredOrientation {
+        case .portrait:
+            Vector2Value(x: gravity.x, y: -gravity.y)
+        case .landscape:
+            Vector2Value(x: gravity.y, y: gravity.x)
+        }
+    }
+
     private func receive(_ raw: Vector2Value) {
         currentRaw = raw
         if neutral == nil {
@@ -399,9 +424,10 @@ private final class MotionInputSource: ObservableObject {
             return
         }
         guard let neutral else { return }
+        // ~35° lean reaches full deflection; smaller leans clear a 0.18 dead zone.
         let value = Vector2Value(
-            x: min(1, max(-1, (raw.x - neutral.x) / 0.6)),
-            y: min(1, max(-1, (raw.y - neutral.y) / 0.6))
+            x: min(1, max(-1, (raw.x - neutral.x) / 0.45)),
+            y: min(1, max(-1, (raw.y - neutral.y) / 0.45))
         )
         onChange?(value)
     }

@@ -889,12 +889,24 @@ struct ScrollAction: Codable, Equatable, Sendable {
     let gain: Double
 }
 
+/// Maps a continuous axis (usually phone tilt X) onto held left/right keyboard chords.
+struct AxisKeysAction: Codable, Equatable, Sendable {
+    let left: KeyChordAction
+    let right: KeyChordAction
+    let deadZone: Double
+
+    var displayString: String {
+        "← \(left.displayString) · \(right.displayString) →"
+    }
+}
+
 enum ActionCapabilityID: String, Codable, CaseIterable, Equatable, Sendable {
     case keyChord
     case mouseMove
     case directionalKeys
     case mouseDrag
     case scroll
+    case axisKeys
 }
 
 enum ActionDefinition: Equatable, Sendable {
@@ -903,12 +915,13 @@ enum ActionDefinition: Equatable, Sendable {
     case directionalKeys(DirectionalKeysAction)
     case mouseDrag(MouseDragAction)
     case scroll(ScrollAction)
+    case axisKeys(AxisKeysAction)
 
     var acceptedInputKinds: Set<InputValueKind> {
         switch self {
         case .keyChord:
             [.none]
-        case .mouseMove, .directionalKeys, .mouseDrag, .scroll:
+        case .mouseMove, .directionalKeys, .mouseDrag, .scroll, .axisKeys:
             [.vector2]
         }
     }
@@ -925,6 +938,8 @@ enum ActionDefinition: Equatable, Sendable {
             .mouseDrag
         case .scroll:
             .scroll
+        case .axisKeys:
+            .axisKeys
         }
     }
 }
@@ -948,6 +963,8 @@ extension ActionDefinition: Codable {
             self = .mouseDrag(try container.decode(MouseDragAction.self, forKey: .configuration))
         case .scroll:
             self = .scroll(try container.decode(ScrollAction.self, forKey: .configuration))
+        case .axisKeys:
+            self = .axisKeys(try container.decode(AxisKeysAction.self, forKey: .configuration))
         }
     }
 
@@ -968,6 +985,9 @@ extension ActionDefinition: Codable {
             try container.encode(configuration, forKey: .configuration)
         case .scroll(let configuration):
             try container.encode(ActionCapabilityID.scroll, forKey: .type)
+            try container.encode(configuration, forKey: .configuration)
+        case .axisKeys(let configuration):
+            try container.encode(ActionCapabilityID.axisKeys, forKey: .type)
             try container.encode(configuration, forKey: .configuration)
         }
     }

@@ -1432,6 +1432,8 @@ private extension MacOverlayView {
             dpadInspector(id)
         } else if let control = draft?.control(id: id), case .joystick = control.kind {
             joystickInspector(id)
+        } else if let control = draft?.control(id: id), case .motion = control.kind {
+            tiltInspector(id)
         } else if let control = draft?.control(id: id), case .trackpad = control.kind {
             trackpadInspector(id)
         } else if let action = draft?.bindings.first(where: { $0.controlID == id })?.action {
@@ -1444,6 +1446,8 @@ private extension MacOverlayView {
                 directionalJoystickInspector(id)
             case .mouseDrag, .scroll:
                 trackpadInspector(id)
+            case .axisKeys:
+                tiltInspector(id)
             }
         }
     }
@@ -1519,6 +1523,135 @@ private extension MacOverlayView {
                 set: { setJoystickDeadZone(id, deadZone: $0) }
             ), in: 0...0.5)
         }
+    }
+
+    func tiltInspector(_ id: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("Tilt mode", selection: Binding(
+                get: { currentTiltMode(id) },
+                set: { setTiltMode(id, $0) }
+            )) {
+                ForEach(TiltOutputMode.allCases) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            switch currentTiltMode(id) {
+            case .steer:
+                Text("Lean left/right to hold these keys.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("LEFT")
+                    .font(.caption.weight(.semibold))
+                axisKeyRecorder(id, side: .left)
+                Text("RIGHT")
+                    .font(.caption.weight(.semibold))
+                axisKeyRecorder(id, side: .right)
+                VStack(alignment: .leading) {
+                    Text("Dead zone: \(currentAxisKeys(id).deadZone, specifier: "%.2f")")
+                    Slider(value: Binding(
+                        get: { currentAxisKeys(id).deadZone },
+                        set: { deadZone in
+                            let current = currentAxisKeys(id)
+                            setAction(id, .axisKeys(AxisKeysAction(
+                                left: current.left,
+                                right: current.right,
+                                deadZone: deadZone
+                            )))
+                        }
+                    ), in: 0...0.5)
+                }
+            case .pointer:
+                Text("Lean to move the Mac pointer.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Stepper("Gain: \(Int(currentMouseMove(id).gain))", value: Binding(
+                    get: { currentMouseMove(id).gain },
+                    set: { setAction(id, .mouseMove(MouseMoveAction(
+                        gain: $0,
+                        deadZone: currentMouseMove(id).deadZone
+                    ))) }
+                ), in: 1...40, step: 1)
+                VStack(alignment: .leading) {
+                    Text("Dead zone: \(currentMouseMove(id).deadZone, specifier: "%.2f")")
+                    Slider(value: Binding(
+                        get: { currentMouseMove(id).deadZone },
+                        set: { setAction(id, .mouseMove(MouseMoveAction(
+                            gain: currentMouseMove(id).gain,
+                            deadZone: $0
+                        ))) }
+                    ), in: 0...0.5)
+                }
+            }
+        }
+    }
+
+    private enum TiltOutputMode: String, CaseIterable, Identifiable {
+        case steer
+        case pointer
+
+        var id: Self { self }
+
+        var label: String {
+            switch self {
+            case .steer: "Steer"
+            case .pointer: "Pointer"
+            }
+        }
+    }
+
+    private enum AxisKeySide {
+        case left, right
+    }
+
+    private func currentTiltMode(_ id: String) -> TiltOutputMode {
+        if let binding = draft?.binding(controlID: id, event: .changed),
+           case .mouseMove = binding.action {
+            return .pointer
+        }
+        return .steer
+    }
+
+    private func setTiltMode(_ id: String, _ mode: TiltOutputMode) {
+        guard canEditLayout, currentTiltMode(id) != mode else { return }
+        switch mode {
+        case .steer:
+            setAction(id, .axisKeys(AxisKeysAction(
+                left: KeyChordAction(key: .leftArrow, modifiers: []),
+                right: KeyChordAction(key: .rightArrow, modifiers: []),
+                deadZone: 0.18
+            )))
+        case .pointer:
+            setAction(id, .mouseMove(MouseMoveAction(gain: 12, deadZone: 0.18)))
+        }
+    }
+
+    private func axisKeyRecorder(_ id: String, side: AxisKeySide) -> some View {
+        let captureID = "\(id)::axis-\(side == .left ? "left" : "right")"
+        let chord = side == .left ? currentAxisKeys(id).left : currentAxisKeys(id).right
+        return ShortcutRecorderField(
+            chord: chord,
+            isRecording: editorState.capturingShortcutControlID == captureID,
+            onStartRecording: {
+                editorState.capturingShortcutControlID = captureID
+            },
+            onCancelRecording: {
+                if editorState.capturingShortcutControlID == captureID {
+                    editorState.capturingShortcutControlID = nil
+                }
+            },
+            onCapture: { captured in
+                let current = currentAxisKeys(id)
+                setAction(id, .axisKeys(AxisKeysAction(
+                    left: side == .left ? captured : current.left,
+                    right: side == .right ? captured : current.right,
+                    deadZone: current.deadZone
+                )))
+                editorState.capturingShortcutControlID = nil
+            }
+        )
     }
 
     func dpadInspector(_ id: String) -> some View {
@@ -1693,6 +1826,18 @@ private extension MacOverlayView {
         guard let binding = draft?.binding(controlID: id, event: .changed),
               case .directionalKeys(let action) = binding.action else {
             return defaultDirectionalKeys()
+        }
+        return action
+    }
+
+    func currentAxisKeys(_ id: String) -> AxisKeysAction {
+        guard let binding = draft?.binding(controlID: id, event: .changed),
+              case .axisKeys(let action) = binding.action else {
+            return AxisKeysAction(
+                left: KeyChordAction(key: .leftArrow, modifiers: []),
+                right: KeyChordAction(key: .rightArrow, modifiers: []),
+                deadZone: 0.18
+            )
         }
         return action
     }
