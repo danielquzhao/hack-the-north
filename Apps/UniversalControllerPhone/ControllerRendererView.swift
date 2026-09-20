@@ -67,6 +67,10 @@ struct ControllerRendererView: View {
                 onPress: { onEvent(control, .began, .none) },
                 onRelease: { onEvent(control, .ended, .none) }
             )
+        case .dpad(let configuration):
+            DPadControlView(label: control.label, hapticsEnabled: configuration.hapticsEnabled) { event in
+                onEvent(control, event, .none)
+            }
         case .joystick(let configuration):
             JoystickControlView(
                 label: control.label,
@@ -89,6 +93,60 @@ struct ControllerRendererView: View {
     }
 }
 
+private struct DPadControlView: View {
+    let label: String
+    let hapticsEnabled: Bool
+    let onEvent: (ControlEventKind) -> Void
+    @State private var activeDirection: DPadDirection?
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        GeometryReader { geometry in
+            let side = max(0, min(geometry.size.width, geometry.size.height - 24))
+            VStack(spacing: 6) {
+                DPadFaceArtwork(side: side, activeDirection: activeDirection)
+                .frame(width: side, height: side)
+                .contentShape(RoundedRectangle(cornerRadius: side * 0.18))
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            activate(direction(at: value.location, side: side))
+                        }
+                        .onEnded { _ in activate(nil) }
+                )
+                Text(label)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .onDisappear { activate(nil) }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { activate(nil) }
+        }
+        .accessibilityLabel("\(label), directional pad")
+    }
+
+    private func direction(at point: CGPoint, side: CGFloat) -> DPadDirection? {
+        let x = (point.x - side / 2) / side
+        let y = (point.y - side / 2) / side
+        guard max(abs(x), abs(y)) > 0.10 else { return nil }
+        if abs(x) > abs(y) { return x < 0 ? .left : .right }
+        return y < 0 ? .up : .down
+    }
+
+    private func activate(_ direction: DPadDirection?) {
+        guard activeDirection != direction else { return }
+        if let activeDirection { onEvent(activeDirection.ended) }
+        activeDirection = direction
+        if let direction {
+            if hapticsEnabled { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+            onEvent(direction.began)
+        }
+    }
+}
+
 private struct ButtonControlView: View {
     let control: ControlDefinition
     let configuration: ButtonControlConfiguration
@@ -98,13 +156,10 @@ private struct ButtonControlView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        Group {
-            if configuration.face == .standard {
-                standardButton
-            } else {
-                gamepadButton
-            }
+        Button {} label: {
+            ButtonArtwork(control: control, configuration: configuration)
         }
+        .buttonStyle(.plain)
         .simultaneousGesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in press() }
@@ -114,58 +169,7 @@ private struct ButtonControlView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { release() }
         }
-    }
-
-    private var standardButton: some View {
-        Button {} label: {
-            Text(control.label)
-                .font(.title2.bold())
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.vertical, 16)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(tintColor)
-                )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var gamepadButton: some View {
-        Button {} label: {
-            VStack(spacing: 7) {
-                Text(configuration.face.rawValue.uppercased())
-                    .font(.system(size: 29, weight: .heavy, design: .rounded))
-                    .foregroundStyle(.white)
-                    .frame(width: 72, height: 72)
-                    .background(
-                        Circle().fill(
-                            LinearGradient(
-                                colors: [faceColor.opacity(0.9), faceColor.opacity(0.55)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    )
-                    .overlay(Circle().strokeBorder(.white.opacity(0.35), lineWidth: 2))
-                    .shadow(color: faceColor.opacity(0.4), radius: 8, y: 4)
-                Text(control.label)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.8))
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.plain)
         .accessibilityLabel("\(configuration.face.rawValue.uppercased()), \(control.label)")
-    }
-
-    private var tintColor: Color {
-        Color(hex: configuration.tintHex) ?? .indigo
-    }
-
-    private var faceColor: Color {
-        tintColor
     }
 
     private func press() {
@@ -196,18 +200,7 @@ private struct TrackpadControlView: View {
     private let zero = Vector2Value(x: 0, y: 0)
 
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "hand.draw")
-                .font(.largeTitle)
-            Text(label)
-                .font(.subheadline.weight(.semibold))
-            Text("Drag to move · Pinch to zoom")
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.7))
-        }
-        .foregroundStyle(.white)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 16))
+        TrackpadArtwork(label: label)
         .contentShape(RoundedRectangle(cornerRadius: 16))
         .highPriorityGesture(
             DragGesture(minimumDistance: 3)
@@ -275,51 +268,34 @@ private struct JoystickControlView: View {
     @State private var isDragging = false
 
     var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(.black.opacity(0.35))
-                    .overlay(Circle().strokeBorder(.white.opacity(0.3), lineWidth: 2))
-                    .frame(width: 150, height: 150)
-                Circle()
-                    .fill(.linearGradient(
-                        colors: [.white.opacity(0.9), .gray.opacity(0.7)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ))
-                    .overlay(Circle().strokeBorder(.white.opacity(0.55), lineWidth: 2))
-                    .frame(width: 66, height: 66)
-                    .offset(offset)
-            }
-            .frame(width: 170, height: 170)
-            .contentShape(Rectangle())
-            .highPriorityGesture(DragGesture(minimumDistance: 0)
-                .onChanged { gesture in
-                    if !isDragging {
-                        isDragging = true
-                        if hapticsEnabled {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        GeometryReader { geometry in
+            let side = max(1, min(geometry.size.width, geometry.size.height - 24))
+            let travel = max(1, side * 0.35)
+            JoystickArtwork(label: label, offset: offset)
+                .contentShape(Rectangle())
+                .highPriorityGesture(DragGesture(minimumDistance: 0)
+                    .onChanged { gesture in
+                        if !isDragging {
+                            isDragging = true
+                            if hapticsEnabled {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            }
                         }
+                        let x = gesture.translation.width
+                        let y = gesture.translation.height
+                        let length = max(1, hypot(x, y))
+                        let scale = min(1, travel / length)
+                        offset = CGSize(width: x * scale, height: y * scale)
+                        onChange(Vector2Value(
+                            x: Double(offset.width / travel),
+                            y: Double(-offset.height / travel)
+                        ))
                     }
-                    let x = gesture.translation.width
-                    let y = gesture.translation.height
-                    let length = max(1, hypot(x, y))
-                    let scale = min(1, 52 / length)
-                    offset = CGSize(width: x * scale, height: y * scale)
-                    onChange(Vector2Value(
-                        x: Double(offset.width / 52),
-                        y: Double(-offset.height / 52)
-                    ))
-                }
-                .onEnded { _ in
-                    offset = .zero
-                    isDragging = false
-                })
-            Text(label)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.8))
+                    .onEnded { _ in
+                        offset = .zero
+                        isDragging = false
+                    })
         }
-        .frame(maxWidth: .infinity)
         .accessibilityLabel("\(label) thumbstick")
     }
 }
@@ -332,19 +308,7 @@ private struct TiltControlView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        VStack(spacing: 4) {
-            Image(systemName: "gyroscope")
-                .font(.title3.weight(.semibold))
-            Text(label)
-                .font(.caption.weight(.semibold))
-            Text(motion.isAvailable ? "Tilt · tap recenter" : "Unavailable")
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.7))
-        }
-        .foregroundStyle(.white)
-        .shadow(color: .black.opacity(0.55), radius: 2, y: 1)
-        .fixedSize()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        TiltArtwork(label: label, isAvailable: motion.isAvailable)
         .contentShape(Rectangle())
         .onTapGesture { motion.recenter() }
         .onAppear { if scenePhase == .active { motion.start(onChange: onChange) } }
@@ -407,17 +371,5 @@ private final class MotionInputSource: ObservableObject {
             y: min(1, max(-1, (raw.y - neutral.y) / 0.6))
         )
         onChange?(value)
-    }
-}
-
-private extension Color {
-    init?(hex: String) {
-        var cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-        if cleaned.hasPrefix("#") { cleaned.removeFirst() }
-        guard cleaned.count == 6, let value = UInt32(cleaned, radix: 16) else { return nil }
-        let red = Double((value >> 16) & 0xFF) / 255
-        let green = Double((value >> 8) & 0xFF) / 255
-        let blue = Double(value & 0xFF) / 255
-        self = Color(.sRGB, red: red, green: green, blue: blue, opacity: 1)
     }
 }

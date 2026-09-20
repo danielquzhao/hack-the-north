@@ -825,35 +825,46 @@ private extension MacOverlayView {
         let control = asset.makeControl(id: controlID)
         let bindings = asset.makeDefaultBindings(controlID: controlID)
 
-        var frame = asset.defaultFrame
-        if let dropPoint, canvasSize.width > 0, canvasSize.height > 0 {
-            frame = LayoutRect(
-                x: (dropPoint.x / canvasSize.width) - asset.defaultWidth / 2,
-                y: (dropPoint.y / canvasSize.height) - asset.defaultHeight / 2,
-                width: asset.defaultWidth,
-                height: asset.defaultHeight
-            ).clamped()
-        }
-        frame = placeFrame(
-            frame,
-            avoiding: draft.layout.items.compactMap { item in
-                guard let control = draft.control(id: item.controlID),
-                      ControllerCapabilityCatalog.current.occupiesLayout(control.kind.capabilityID),
-                      asset.occupiesLayout else {
-                    return nil
-                }
-                return item.frame
+        func initialFrame(for orientation: ControllerOrientation) -> LayoutRect {
+            var frame = asset.defaultFrame
+            if orientation == draft.preferredOrientation,
+               let dropPoint, canvasSize.width > 0, canvasSize.height > 0 {
+                frame = LayoutRect(
+                    x: (dropPoint.x / canvasSize.width) - asset.defaultWidth / 2,
+                    y: (dropPoint.y / canvasSize.height) - asset.defaultHeight / 2,
+                    width: asset.defaultWidth,
+                    height: asset.defaultHeight
+                ).clamped()
             }
-        )
+            let canvasWidth = orientation == .portrait ? 320.0 : 600.0
+            let canvasHeight = orientation == .portrait ? 560.0 : 300.0
+            frame = ControllerLayoutGeometry.visibleFrame(
+                for: control.kind,
+                in: frame,
+                canvasWidth: canvasWidth,
+                canvasHeight: canvasHeight
+            )
+            return placeFrame(
+                frame,
+                avoiding: draft.layout(for: orientation).items.compactMap { item in
+                    guard let other = draft.control(id: item.controlID),
+                          ControllerCapabilityCatalog.current.occupiesLayout(other.kind.capabilityID),
+                          asset.occupiesLayout else { return nil }
+                    return item.frame
+                }
+            )
+        }
+        let portraitFrame = initialFrame(for: .portrait)
+        let landscapeFrame = initialFrame(for: .landscape)
 
         let portrait = ControllerLayout(
             items: draft.layouts.portrait.items + [
-                ControllerLayoutItem(controlID: controlID, frame: frame)
+                ControllerLayoutItem(controlID: controlID, frame: portraitFrame)
             ]
         )
         let landscape = ControllerLayout(
             items: draft.layouts.landscape.items + [
-                ControllerLayoutItem(controlID: controlID, frame: frame)
+                ControllerLayoutItem(controlID: controlID, frame: landscapeFrame)
             ]
         )
 
@@ -1009,7 +1020,7 @@ private extension MacOverlayView {
                     controllerPreview(draft)
                         .frame(
                             width: draft.preferredOrientation == .portrait ? 320 : 600,
-                            height: draft.preferredOrientation == .portrait ? 430 : 350
+                            height: draft.preferredOrientation == .portrait ? 560 : 300
                         )
                         .disabled(!canEditLayout)
                 } else {
@@ -1064,11 +1075,6 @@ private extension MacOverlayView {
                         )
                         EditablePreviewControl(
                             control: control,
-                            title: previewTitle(for: control),
-                            subtitle: previewSubtitle(for: control),
-                            systemImage: ControllerCapabilityCatalog.current.control(
-                                id: control.kind.capabilityID
-                            )?.systemImage,
                             occupiesLayout: occupiesLayout,
                             frame: item.frame,
                             canvasSize: size,
@@ -1085,7 +1091,6 @@ private extension MacOverlayView {
                                 }
                                 : [],
                             isSelected: selectedControlID == control.id,
-                            color: previewColor(for: control),
                             onSelect: { selectedControlID = control.id },
                             onChangeFrame: { frame in
                                 updateFrame(control.id, frame)
@@ -1124,16 +1129,6 @@ private extension MacOverlayView {
         .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 22))
     }
 
-    func previewColor(for control: ControlDefinition) -> Color {
-        switch control.kind {
-        case .button(let configuration):
-            Color(hex: configuration.tintHex) ?? .indigo
-        case .joystick: .blue
-        case .motion: .teal
-        case .trackpad: .purple
-        }
-    }
-
     static func defaultTintHex(for face: ButtonFace, fallingBack: String) -> String {
         switch face {
         case .standard: fallingBack
@@ -1142,23 +1137,6 @@ private extension MacOverlayView {
         case .x: "007AFF"
         case .y: "FF9500"
         }
-    }
-
-    func previewTitle(for control: ControlDefinition) -> String {
-        if case .button(let configuration) = control.kind, configuration.face != .standard {
-            return configuration.face.rawValue.uppercased()
-        }
-        return control.label
-    }
-
-    func previewSubtitle(for control: ControlDefinition) -> String? {
-        if case .button(let configuration) = control.kind, configuration.face != .standard {
-            return control.label
-        }
-        if !ControllerCapabilityCatalog.current.occupiesLayout(control.kind.capabilityID) {
-            return control.label
-        }
-        return nil
     }
 
     func inspector(_ draft: ControllerDocument) -> some View {
@@ -1193,7 +1171,14 @@ private extension MacOverlayView {
                     ))
                     .textFieldStyle(.roundedBorder)
 
-                    let frame = draft.layout.items[index].frame
+                    let canvasWidth = draft.preferredOrientation == .portrait ? 320.0 : 600.0
+                    let canvasHeight = draft.preferredOrientation == .portrait ? 560.0 : 300.0
+                    let frame = ControllerLayoutGeometry.visibleFrame(
+                        for: control.kind,
+                        in: draft.layout.items[index].frame,
+                        canvasWidth: canvasWidth,
+                        canvasHeight: canvasHeight
+                    )
                     Text("Position \(Int(frame.x * 100))%, \(Int(frame.y * 100))%")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -1274,7 +1259,9 @@ private extension MacOverlayView {
 
     @ViewBuilder
     func actionInspector(_ id: String) -> some View {
-        if let control = draft?.control(id: id), case .trackpad = control.kind {
+        if let control = draft?.control(id: id), case .dpad = control.kind {
+            dpadInspector(id)
+        } else if let control = draft?.control(id: id), case .trackpad = control.kind {
             trackpadInspector(id)
         } else if let action = draft?.bindings.first(where: { $0.controlID == id })?.action {
             switch action {
@@ -1296,6 +1283,22 @@ private extension MacOverlayView {
                 }
             case .mouseDrag, .scroll:
                 trackpadInspector(id)
+            }
+        }
+    }
+
+    func dpadInspector(_ id: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Record a shortcut for each direction. Hold a direction to hold its key.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ForEach([("Up", ControlEventKind.upBegan),
+                     ("Down", .downBegan),
+                     ("Left", .leftBegan),
+                     ("Right", .rightBegan)], id: \.1) { label, event in
+                Text(label.uppercased())
+                    .font(.caption.weight(.semibold))
+                keyChordInspector(id, event: event)
             }
         }
     }
@@ -1550,43 +1553,6 @@ private enum LayoutEditing {
         )
     }
 
-    static func hitTestHandle(localPoint: CGPoint, size: CGSize) -> ResizeHandle? {
-        // Keep a real move target in the middle — edge band scales with control size.
-        let inset = min(10, max(5, min(size.width, size.height) * 0.18))
-        guard size.width > inset * 2.5, size.height > inset * 2.5 else {
-            // Tiny controls: corners only, so the center stays draggable.
-            let corner = inset * 1.2
-            let nearLeft = localPoint.x <= corner
-            let nearRight = localPoint.x >= size.width - corner
-            let nearTop = localPoint.y <= corner
-            let nearBottom = localPoint.y >= size.height - corner
-            switch (nearTop, nearBottom, nearLeft, nearRight) {
-            case (true, false, true, false): return .topLeft
-            case (true, false, false, true): return .topRight
-            case (false, true, true, false): return .bottomLeft
-            case (false, true, false, true): return .bottomRight
-            default: return nil
-            }
-        }
-
-        let nearLeft = localPoint.x <= inset
-        let nearRight = localPoint.x >= size.width - inset
-        let nearTop = localPoint.y <= inset
-        let nearBottom = localPoint.y >= size.height - inset
-
-        switch (nearTop, nearBottom, nearLeft, nearRight) {
-        case (true, false, true, false): return .topLeft
-        case (true, false, false, true): return .topRight
-        case (false, true, true, false): return .bottomLeft
-        case (false, true, false, true): return .bottomRight
-        case (true, false, false, false): return .top
-        case (false, true, false, false): return .bottom
-        case (false, false, true, false): return .left
-        case (false, false, false, true): return .right
-        default: return nil
-        }
-    }
-
     static func resized(
         from origin: LayoutRect,
         handle: ResizeHandle,
@@ -1660,6 +1626,49 @@ private enum LayoutEditing {
         ).clamped(minimumSize: minimumSize)
     }
 
+    static func resizedArtwork(
+        from origin: LayoutRect,
+        handle: ResizeHandle,
+        dx: Double,
+        dy: Double,
+        canvasSize: CGSize
+    ) -> LayoutRect {
+        let canvasWidth = Double(canvasSize.width)
+        let canvasHeight = Double(canvasSize.height)
+        guard canvasWidth > 0, canvasHeight > 0 else { return origin }
+        let horizontalChange = handle.movesLeft ? -dx * canvasWidth
+            : handle.movesRight ? dx * canvasWidth : 0
+        let verticalChange = handle.movesTop ? -dy * canvasHeight
+            : handle.movesBottom ? dy * canvasHeight : 0
+        // A corner drag should follow both axes smoothly. Picking the dominant
+        // axis makes the size jump when the pointer crosses the diagonal.
+        let change: Double
+        if handle.isCorner {
+            change = (horizontalChange + verticalChange) / 2
+        } else {
+            change = horizontalChange != 0 ? horizontalChange : verticalChange
+        }
+        let originalSide = min(origin.width * canvasWidth, origin.height * canvasHeight - 24)
+        let centerX = origin.x + origin.width / 2
+        let centerY = origin.y + origin.height / 2
+        let maxHorizontal = handle.movesLeft ? origin.maxX * canvasWidth
+            : handle.movesRight ? (1 - origin.x) * canvasWidth
+            : 2 * min(centerX, 1 - centerX) * canvasWidth
+        let maxVertical = handle.movesTop ? origin.maxY * canvasHeight - 24
+            : handle.movesBottom ? (1 - origin.y) * canvasHeight - 24
+            : 2 * min(centerY, 1 - centerY) * canvasHeight - 24
+        let minimumSide = max(40, minimumSize * canvasWidth, minimumSize * canvasHeight - 24)
+        let side = min(max(minimumSide, originalSide + change), max(minimumSide, min(maxHorizontal, maxVertical)))
+        let width = side / canvasWidth
+        let height = (side + 24) / canvasHeight
+        let x = handle.movesLeft ? origin.maxX - width
+            : handle.movesRight ? origin.x : centerX - width / 2
+        let y = handle.movesTop ? origin.maxY - height
+            : handle.movesBottom ? origin.y : centerY - height / 2
+        return LayoutRect(x: x, y: y, width: width, height: height)
+            .clamped(minimumSize: minimumSize)
+    }
+
     /// Keeps `proposed` when clear; otherwise slides on one axis or stays put.
     /// If already overlapping, allow free movement (still canvas-clamped) so controls can untangle.
     static func resolvedOrPrevious(
@@ -1702,24 +1711,25 @@ private enum LayoutEditing {
 
 private struct EditablePreviewControl: View {
     let control: ControlDefinition
-    let title: String
-    let subtitle: String?
-    let systemImage: String?
     let occupiesLayout: Bool
     let frame: LayoutRect
     let canvasSize: CGSize
     let obstacles: [LayoutRect]
     let isSelected: Bool
-    let color: Color
     let onSelect: () -> Void
     let onChangeFrame: (LayoutRect) -> Void
 
     @State private var liveFrame: LayoutRect?
     @State private var gestureOrigin: LayoutRect?
-    @State private var activeHandle: ResizeHandle?
 
     private var displayed: LayoutRect {
-        (liveFrame ?? frame).clamped(minimumSize: LayoutEditing.minimumSize)
+        if let liveFrame { return liveFrame.clamped(minimumSize: LayoutEditing.minimumSize) }
+        return ControllerLayoutGeometry.visibleFrame(
+            for: control.kind,
+            in: frame,
+            canvasWidth: Double(canvasSize.width),
+            canvasHeight: Double(canvasSize.height)
+        ).clamped(minimumSize: LayoutEditing.minimumSize)
     }
 
     private var pixelFrame: CGRect {
@@ -1728,63 +1738,22 @@ private struct EditablePreviewControl: View {
 
     var body: some View {
         ZStack {
-            if occupiesLayout {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(color.opacity(isSelected ? 0.95 : 0.82))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(
-                                .white.opacity(isSelected ? 0.95 : 0.25),
-                                lineWidth: isSelected ? 2 : 1
-                            )
-                    }
-                    .shadow(color: .black.opacity(0.25), radius: isSelected ? 8 : 3, y: 2)
-
-                VStack(spacing: 2) {
-                    Text(title)
-                        .font(subtitle == nil
-                              ? .caption.weight(.semibold)
-                              : .title3.weight(.heavy))
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.caption2.weight(.medium))
-                            .opacity(0.85)
-                            .lineLimit(1)
-                    }
-                }
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-                .padding(8)
-                .minimumScaleFactor(0.55)
-                .lineLimit(2)
+            ControlArtwork(control: control)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .allowsHitTesting(false)
-            } else {
-                VStack(spacing: 4) {
-                    if let systemImage {
-                        Image(systemName: systemImage)
-                            .font(.system(size: 18, weight: .semibold))
-                    }
-                    Text(subtitle ?? title)
-                        .font(.caption2.weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
-                .overlay {
-                    if isSelected {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(.white.opacity(0.85), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    }
-                }
-                .shadow(color: .black.opacity(0.55), radius: 2, y: 1)
+
+            if isSelected {
+                RoundedRectangle(cornerRadius: occupiesLayout ? 16 : 8)
+                    .strokeBorder(
+                        .white.opacity(0.5),
+                        style: StrokeStyle(lineWidth: 1, dash: [5, 4])
+                    )
+                    .allowsHitTesting(false)
             }
 
             if isSelected && occupiesLayout {
                 ForEach(ResizeHandle.allCases, id: \.self) { handle in
                     handleView(handle)
-                        .allowsHitTesting(false)
                 }
             }
         }
@@ -1793,55 +1762,52 @@ private struct EditablePreviewControl: View {
         // `position` keeps hit-testing aligned with the drawn control (unlike `offset`).
         .position(x: pixelFrame.midX, y: pixelFrame.midY)
         .zIndex(isSelected ? 20 : (occupiesLayout ? 0 : 15))
-        .gesture(canvasDragGesture)
+        .gesture(canvasDragGesture(handle: nil))
         .onTapGesture(perform: onSelect)
     }
 
     @ViewBuilder
     private func handleView(_ handle: ResizeHandle) -> some View {
-        let size: CGFloat = handle.isCorner ? 11 : 7
+        let targetSize = min(24, max(12, min(pixelFrame.width, pixelFrame.height) / 3))
+        let dotSize: CGFloat = handle.isCorner ? 11 : 7
         Circle()
             .fill(.white)
-            .frame(width: size, height: size)
+            .frame(width: min(dotSize, targetSize / 2), height: min(dotSize, targetSize / 2))
             .overlay {
                 Circle()
                     .strokeBorder(.black.opacity(0.22), lineWidth: 1)
             }
+            .frame(width: targetSize, height: targetSize)
+            .contentShape(Rectangle())
+            .highPriorityGesture(canvasDragGesture(handle: handle))
             .position(handlePosition(handle))
     }
 
     private func handlePosition(_ handle: ResizeHandle) -> CGPoint {
         let width = max(1, pixelFrame.width)
         let height = max(1, pixelFrame.height)
+        // Keep each hit target inside the control and clear of its neighbors.
+        let inset = min(12, max(6, min(width, height) / 6))
         switch handle {
-        case .topLeft: return CGPoint(x: 0, y: 0)
-        case .top: return CGPoint(x: width / 2, y: 0)
-        case .topRight: return CGPoint(x: width, y: 0)
-        case .left: return CGPoint(x: 0, y: height / 2)
-        case .right: return CGPoint(x: width, y: height / 2)
-        case .bottomLeft: return CGPoint(x: 0, y: height)
-        case .bottom: return CGPoint(x: width / 2, y: height)
-        case .bottomRight: return CGPoint(x: width, y: height)
+        case .topLeft: return CGPoint(x: inset, y: inset)
+        case .top: return CGPoint(x: width / 2, y: inset)
+        case .topRight: return CGPoint(x: width - inset, y: inset)
+        case .left: return CGPoint(x: inset, y: height / 2)
+        case .right: return CGPoint(x: width - inset, y: height / 2)
+        case .bottomLeft: return CGPoint(x: inset, y: height - inset)
+        case .bottom: return CGPoint(x: width / 2, y: height - inset)
+        case .bottomRight: return CGPoint(x: width - inset, y: height - inset)
         }
     }
 
-    private var canvasDragGesture: some Gesture {
+    private func canvasDragGesture(handle: ResizeHandle?) -> some Gesture {
         DragGesture(minimumDistance: 2, coordinateSpace: .named("previewCanvas"))
             .onChanged { value in
                 if gestureOrigin == nil {
                     onSelect()
-                    let origin = frame.clamped(minimumSize: LayoutEditing.minimumSize)
+                    let origin = displayed
                     gestureOrigin = origin
                     liveFrame = origin
-                    let startRect = LayoutEditing.pixelRect(for: origin, in: canvasSize)
-                    let local = CGPoint(
-                        x: value.startLocation.x - startRect.minX,
-                        y: value.startLocation.y - startRect.minY
-                    )
-                    activeHandle = LayoutEditing.hitTestHandle(
-                        localPoint: local,
-                        size: startRect.size
-                    )
                 }
 
                 guard let origin = gestureOrigin,
@@ -1852,8 +1818,15 @@ private struct EditablePreviewControl: View {
                 let dy = (value.location.y - value.startLocation.y) / canvasSize.height
 
                 let proposed: LayoutRect
-                if let handle = activeHandle {
-                    proposed = LayoutEditing.resized(from: origin, handle: handle, dx: dx, dy: dy)
+                if let handle {
+                    switch control.kind {
+                    case .dpad, .joystick:
+                        proposed = LayoutEditing.resizedArtwork(
+                            from: origin, handle: handle, dx: dx, dy: dy, canvasSize: canvasSize
+                        )
+                    default:
+                        proposed = LayoutEditing.resized(from: origin, handle: handle, dx: dx, dy: dy)
+                    }
                 } else {
                     proposed = LayoutRect(
                         x: origin.x + dx,
@@ -1863,11 +1836,23 @@ private struct EditablePreviewControl: View {
                     )
                 }
 
-                let next = LayoutEditing.resolvedOrPrevious(
-                    proposed,
-                    previous: liveFrame ?? origin,
-                    avoiding: obstacles
-                )
+                let previous = liveFrame ?? origin
+                let aspectResize: Bool = {
+                    guard handle != nil else { return false }
+                    switch control.kind {
+                    case .dpad, .joystick: return true
+                    default: return false
+                    }
+                }()
+                let next = aspectResize &&
+                    obstacles.contains(where: { LayoutEditing.overlaps(proposed, $0) }) &&
+                    !obstacles.contains(where: { LayoutEditing.overlaps(previous, $0) })
+                    ? previous
+                    : LayoutEditing.resolvedOrPrevious(
+                        proposed,
+                        previous: previous,
+                        avoiding: obstacles
+                    )
                 if liveFrame != next {
                     liveFrame = next
                     onChangeFrame(next)
@@ -1879,7 +1864,6 @@ private struct EditablePreviewControl: View {
                 }
                 gestureOrigin = nil
                 liveFrame = nil
-                activeHandle = nil
             }
     }
 }

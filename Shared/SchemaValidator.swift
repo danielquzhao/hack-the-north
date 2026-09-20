@@ -42,6 +42,18 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
                 occupiesLayout: true
             ),
             ControlCapabilityDescriptor(
+                id: .dpad,
+                outputKind: .none,
+                events: [.upBegan, .upEnded, .downBegan, .downEnded,
+                         .leftBegan, .leftEnded, .rightBegan, .rightEnded],
+                displayName: "D-pad",
+                systemImage: "dpad.fill",
+                summary: "Four independently mapped directions",
+                defaultWidth: 0.36,
+                defaultHeight: 0.36,
+                occupiesLayout: true
+            ),
+            ControlCapabilityDescriptor(
                 id: .joystick,
                 outputKind: .vector2,
                 events: [.changed],
@@ -238,6 +250,13 @@ enum SchemaValidator {
                     throw error("Trackpad needs drag and zoom mappings.")
                 }
             }
+            if case .dpad = control.kind {
+                for event in [ControlEventKind.upBegan, .downBegan, .leftBegan, .rightBegan] {
+                    guard case .keyChord = document.binding(controlID: control.id, event: event)?.action else {
+                        throw error("D-pad needs a keyboard mapping for every direction.")
+                    }
+                }
+            }
         }
     }
 
@@ -297,6 +316,9 @@ enum SchemaValidator {
             throw error("Control event vector must be between -1 and 1.")
         }
         let binding = document.binding(controlID: event.controlID, event: event.event)
+            ?? event.event.dpadBindingEvent.flatMap {
+                document.binding(controlID: event.controlID, event: $0)
+            }
             ?? (event.event == .began || event.event == .ended
                 ? document.binding(
                     controlID: event.controlID,
@@ -365,6 +387,8 @@ extension ControlCapabilityDescriptor {
         switch self.id {
         case .button:
             .button(id: id, label: displayName)
+        case .dpad:
+            .dpad(id: id, label: displayName)
         case .joystick:
             .joystick(id: id, label: displayName)
         case .motion:
@@ -384,6 +408,18 @@ extension ControlCapabilityDescriptor {
                 event: .triggered,
                 action: .keyChord(KeyChordAction(key: .rightArrow, modifiers: []))
             )]
+        case .dpad:
+            [(.upBegan, SemanticKey.upArrow),
+             (.downBegan, .downArrow),
+             (.leftBegan, .leftArrow),
+             (.rightBegan, .rightArrow)].map { event, key in
+                ControlBinding(
+                    id: "\(controlID)-\(event.rawValue)",
+                    controlID: controlID,
+                    event: event,
+                    action: .keyChord(KeyChordAction(key: key, modifiers: []))
+                )
+            }
         case .joystick, .motion:
             [ControlBinding(
                 id: "\(controlID)-move",

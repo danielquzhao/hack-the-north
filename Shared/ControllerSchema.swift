@@ -1,7 +1,7 @@
 import Foundation
 
 struct ControllerDocument: Codable, Equatable, Sendable, Identifiable {
-    static let currentSchemaVersion = 5
+    static let currentSchemaVersion = 6
 
     let schemaVersion: Int
     let id: UUID
@@ -114,6 +114,108 @@ struct ControllerLayoutItem: Codable, Equatable, Sendable, Identifiable {
     let frame: LayoutRect
 }
 
+struct ControllerGridPlacement: Equatable, Sendable {
+    let controlID: String
+    let kind: ControlCapabilityID
+    let column: Int
+    let row: Int
+    let columnSpan: Int
+    let rowSpan: Int
+}
+
+enum ControllerGridError: LocalizedError {
+    case outOfBounds(String)
+    case overlap(String, String)
+
+    var errorDescription: String? {
+        switch self {
+        case .outOfBounds(let controlID):
+            "Control '\(controlID)' must fit within its orientation grid and occupy at least two cells in each dimension."
+        case .overlap(let first, let second):
+            "Controls '\(first)' and '\(second)' overlap in the layout grid."
+        }
+    }
+}
+
+enum ControllerLayoutGrid {
+    static func dimensions(for orientation: ControllerOrientation) -> (columns: Int, rows: Int) {
+        switch orientation {
+        case .portrait: (12, 20)
+        case .landscape: (20, 10)
+        }
+    }
+
+    static func layout(
+        for orientation: ControllerOrientation,
+        placements: [ControllerGridPlacement]
+    ) throws -> ControllerLayout {
+        let grid = dimensions(for: orientation)
+        for placement in placements {
+            guard placement.column >= 0, placement.row >= 0,
+                  placement.columnSpan >= 2, placement.rowSpan >= 2,
+                  placement.column + placement.columnSpan <= grid.columns,
+                  placement.row + placement.rowSpan <= grid.rows else {
+                throw ControllerGridError.outOfBounds(placement.controlID)
+            }
+        }
+        for index in placements.indices where placements[index].kind != .motion {
+            for otherIndex in placements.indices where otherIndex > index && placements[otherIndex].kind != .motion {
+                let a = placements[index]
+                let b = placements[otherIndex]
+                if a.column < b.column + b.columnSpan && b.column < a.column + a.columnSpan &&
+                   a.row < b.row + b.rowSpan && b.row < a.row + a.rowSpan {
+                    throw ControllerGridError.overlap(a.controlID, b.controlID)
+                }
+            }
+        }
+        let inset = 0.008
+        return ControllerLayout(items: placements.map { placement in
+            ControllerLayoutItem(
+                controlID: placement.controlID,
+                frame: LayoutRect(
+                    x: Double(placement.column) / Double(grid.columns) + inset,
+                    y: Double(placement.row) / Double(grid.rows) + inset,
+                    width: Double(placement.columnSpan) / Double(grid.columns) - inset * 2,
+                    height: Double(placement.rowSpan) / Double(grid.rows) - inset * 2
+                )
+            )
+        })
+    }
+}
+
+enum ControllerLayoutGeometry {
+    /// Tighten layouts for controls whose artwork is centered inside the assigned area.
+    static func visibleFrame(
+        for kind: ControlKind,
+        in frame: LayoutRect,
+        canvasWidth: Double,
+        canvasHeight: Double,
+        maximumSide: Double = .infinity
+    ) -> LayoutRect {
+        guard canvasWidth > 0, canvasHeight > 0 else { return frame }
+        let width = frame.width * canvasWidth
+        let height = frame.height * canvasHeight
+        let side: Double
+        switch kind {
+        case .dpad:
+            side = min(width, max(0, height - 24), maximumSide)
+        case .joystick:
+            side = min(width, max(0, height - 24), maximumSide)
+        default:
+            return frame
+        }
+        guard side >= 24 else { return frame }
+        let visibleWidth = side / canvasWidth
+        let visibleHeight = (side + 24) / canvasHeight
+        return LayoutRect(
+            x: frame.x + (frame.width - visibleWidth) / 2,
+            y: frame.y + (frame.height - visibleHeight) / 2,
+            width: visibleWidth,
+            height: visibleHeight
+        ).clamped()
+    }
+}
+
 enum AbsoluteLayoutBuilder {
     /// Packs grid-style spans into normalized absolute frames for demos and AI conversion.
     static func fromGrid(
@@ -175,6 +277,7 @@ enum ButtonFace: String, Codable, CaseIterable, Equatable, Sendable {
 
 enum ControlCapabilityID: String, Codable, CaseIterable, Equatable, Sendable {
     case button
+    case dpad
     case joystick
     case motion
     case trackpad
@@ -249,6 +352,10 @@ struct JoystickControlConfiguration: Codable, Equatable, Sendable {
     let hapticsEnabled: Bool
 }
 
+struct DPadControlConfiguration: Codable, Equatable, Sendable {
+    let hapticsEnabled: Bool
+}
+
 struct TrackpadControlConfiguration: Codable, Equatable, Sendable {
     let hapticsEnabled: Bool
 }
@@ -263,13 +370,14 @@ struct MotionControlConfiguration: Codable, Equatable, Sendable {
 
 enum ControlKind: Equatable, Sendable {
     case button(ButtonControlConfiguration)
+    case dpad(DPadControlConfiguration)
     case joystick(JoystickControlConfiguration)
     case motion(MotionControlConfiguration)
     case trackpad(TrackpadControlConfiguration)
 
     var outputKind: InputValueKind {
         switch self {
-        case .button:
+        case .button, .dpad:
             .none
         case .joystick, .motion, .trackpad:
             .vector2
@@ -280,6 +388,8 @@ enum ControlKind: Equatable, Sendable {
         switch self {
         case .button:
             .button
+        case .dpad:
+            .dpad
         case .joystick:
             .joystick
         case .motion:
@@ -293,6 +403,9 @@ enum ControlKind: Equatable, Sendable {
         switch self {
         case .button:
             [.triggered, .began, .ended]
+        case .dpad:
+            [.upBegan, .upEnded, .downBegan, .downEnded,
+             .leftBegan, .leftEnded, .rightBegan, .rightEnded]
         case .joystick, .motion:
             [.changed]
         case .trackpad:
@@ -334,6 +447,14 @@ struct ControlDefinition: Equatable, Sendable, Identifiable {
         )
     }
 
+    static func dpad(id: String, label: String) -> ControlDefinition {
+        ControlDefinition(
+            id: id,
+            label: label,
+            kind: .dpad(DPadControlConfiguration(hapticsEnabled: true))
+        )
+    }
+
     static func tilt(id: String, label: String) -> ControlDefinition {
         ControlDefinition(
             id: id,
@@ -371,6 +492,8 @@ extension ControlDefinition: Codable {
                 ButtonControlConfiguration.self,
                 forKey: .configuration
             ))
+        case .dpad:
+            kind = .dpad(try container.decode(DPadControlConfiguration.self, forKey: .configuration))
         case .joystick:
             kind = .joystick(try container.decode(
                 JoystickControlConfiguration.self,
@@ -398,6 +521,9 @@ extension ControlDefinition: Codable {
         case .button(let configuration):
             try container.encode(ControlCapabilityID.button, forKey: .type)
             try container.encode(configuration, forKey: .configuration)
+        case .dpad(let configuration):
+            try container.encode(ControlCapabilityID.dpad, forKey: .type)
+            try container.encode(configuration, forKey: .configuration)
         case .joystick(let configuration):
             try container.encode(ControlCapabilityID.joystick, forKey: .type)
             try container.encode(configuration, forKey: .configuration)
@@ -417,6 +543,34 @@ enum ControlEventKind: String, Codable, Equatable, Hashable, Sendable {
     case changed
     case ended
     case pinchChanged
+    case upBegan, upEnded
+    case downBegan, downEnded
+    case leftBegan, leftEnded
+    case rightBegan, rightEnded
+
+    var dpadBindingEvent: ControlEventKind? {
+        switch self {
+        case .upBegan, .upEnded: .upBegan
+        case .downBegan, .downEnded: .downBegan
+        case .leftBegan, .leftEnded: .leftBegan
+        case .rightBegan, .rightEnded: .rightBegan
+        default: nil
+        }
+    }
+
+    var isKeyPressStart: Bool {
+        switch self {
+        case .began, .upBegan, .downBegan, .leftBegan, .rightBegan: true
+        default: false
+        }
+    }
+
+    var isKeyPressEnd: Bool {
+        switch self {
+        case .ended, .upEnded, .downEnded, .leftEnded, .rightEnded: true
+        default: false
+        }
+    }
 }
 
 enum InputValueKind: String, Codable, Equatable, Sendable {
