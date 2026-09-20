@@ -62,6 +62,10 @@ struct ControllerRendererView: View {
                 onPress: { onEvent(control, .began, .none) },
                 onRelease: { onEvent(control, .ended, .none) }
             )
+        case .dpad(let configuration):
+            DPadControlView(label: control.label, hapticsEnabled: configuration.hapticsEnabled) { event in
+                onEvent(control, event, .none)
+            }
         case .joystick(let configuration):
             JoystickControlView(
                 label: control.label,
@@ -80,6 +84,110 @@ struct ControllerRendererView: View {
             ) { event, value in
                 onEvent(control, event, .vector2(value))
             }
+        }
+    }
+}
+
+private enum DPadDirection {
+    case up, down, left, right
+
+    var began: ControlEventKind {
+        switch self {
+        case .up: .upBegan
+        case .down: .downBegan
+        case .left: .leftBegan
+        case .right: .rightBegan
+        }
+    }
+
+    var ended: ControlEventKind {
+        switch self {
+        case .up: .upEnded
+        case .down: .downEnded
+        case .left: .leftEnded
+        case .right: .rightEnded
+        }
+    }
+}
+
+private struct DPadControlView: View {
+    let label: String
+    let hapticsEnabled: Bool
+    let onEvent: (ControlEventKind) -> Void
+    @State private var activeDirection: DPadDirection?
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        GeometryReader { geometry in
+            let side = min(geometry.size.width, geometry.size.height * 0.82)
+            VStack(spacing: 6) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: side * 0.18, style: .continuous)
+                        .fill(Color(white: 0.20))
+                    RoundedRectangle(cornerRadius: side * 0.18, style: .continuous)
+                        .strokeBorder(.white.opacity(0.25), lineWidth: 2)
+                    directionTriangle(.up, side: side)
+                        .position(x: side * 0.5, y: side * 0.21)
+                    directionTriangle(.down, side: side)
+                        .position(x: side * 0.5, y: side * 0.79)
+                    directionTriangle(.left, side: side)
+                        .position(x: side * 0.21, y: side * 0.5)
+                    directionTriangle(.right, side: side)
+                        .position(x: side * 0.79, y: side * 0.5)
+                    Circle().fill(Color(white: 0.12))
+                        .frame(width: side * 0.18, height: side * 0.18)
+                }
+                .frame(width: side, height: side)
+                .contentShape(RoundedRectangle(cornerRadius: side * 0.18))
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            activate(direction(at: value.location, side: side))
+                        }
+                        .onEnded { _ in activate(nil) }
+                )
+                Text(label)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .onDisappear { activate(nil) }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { activate(nil) }
+        }
+        .accessibilityLabel("\(label), directional pad")
+    }
+
+    private func directionTriangle(_ direction: DPadDirection, side: CGFloat) -> some View {
+        let angle: Double = switch direction {
+        case .up: 0
+        case .down: 180
+        case .left: -90
+        case .right: 90
+        }
+        return Image(systemName: "triangle.fill")
+            .font(.system(size: side * 0.20, weight: .heavy))
+            .rotationEffect(.degrees(angle))
+            .foregroundStyle(activeDirection == direction ? .white : .white.opacity(0.65))
+    }
+
+    private func direction(at point: CGPoint, side: CGFloat) -> DPadDirection? {
+        let x = (point.x - side / 2) / side
+        let y = (point.y - side / 2) / side
+        guard max(abs(x), abs(y)) > 0.10 else { return nil }
+        if abs(x) > abs(y) { return x < 0 ? .left : .right }
+        return y < 0 ? .up : .down
+    }
+
+    private func activate(_ direction: DPadDirection?) {
+        guard activeDirection != direction else { return }
+        if let activeDirection { onEvent(activeDirection.ended) }
+        activeDirection = direction
+        if let direction {
+            if hapticsEnabled { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+            onEvent(direction.began)
         }
     }
 }

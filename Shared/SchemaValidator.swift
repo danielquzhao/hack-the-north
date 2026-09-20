@@ -27,6 +27,12 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
                 events: [.triggered, .began, .ended]
             ),
             ControlCapabilityDescriptor(
+                id: .dpad,
+                outputKind: .none,
+                events: [.upBegan, .upEnded, .downBegan, .downEnded,
+                         .leftBegan, .leftEnded, .rightBegan, .rightEnded]
+            ),
+            ControlCapabilityDescriptor(
                 id: .joystick,
                 outputKind: .vector2,
                 events: [.changed]
@@ -197,6 +203,13 @@ enum SchemaValidator {
                     throw error("Trackpad needs drag and zoom mappings.")
                 }
             }
+            if case .dpad = control.kind {
+                for event in [ControlEventKind.upBegan, .downBegan, .leftBegan, .rightBegan] {
+                    guard case .keyChord = document.binding(controlID: control.id, event: event)?.action else {
+                        throw error("D-pad needs a keyboard mapping for every direction.")
+                    }
+                }
+            }
         }
     }
 
@@ -256,6 +269,9 @@ enum SchemaValidator {
             throw error("Control event vector must be between -1 and 1.")
         }
         let binding = document.binding(controlID: event.controlID, event: event.event)
+            ?? event.event.dpadBindingEvent.flatMap {
+                document.binding(controlID: event.controlID, event: $0)
+            }
             ?? (event.event == .began || event.event == .ended
                 ? document.binding(
                     controlID: event.controlID,

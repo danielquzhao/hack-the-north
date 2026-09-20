@@ -1,7 +1,7 @@
 import Foundation
 
 struct ControllerDocument: Codable, Equatable, Sendable, Identifiable {
-    static let currentSchemaVersion = 5
+    static let currentSchemaVersion = 6
 
     let schemaVersion: Int
     let id: UUID
@@ -175,6 +175,7 @@ enum ButtonFace: String, Codable, CaseIterable, Equatable, Sendable {
 
 enum ControlCapabilityID: String, Codable, CaseIterable, Equatable, Sendable {
     case button
+    case dpad
     case joystick
     case motion
     case trackpad
@@ -249,6 +250,10 @@ struct JoystickControlConfiguration: Codable, Equatable, Sendable {
     let hapticsEnabled: Bool
 }
 
+struct DPadControlConfiguration: Codable, Equatable, Sendable {
+    let hapticsEnabled: Bool
+}
+
 struct TrackpadControlConfiguration: Codable, Equatable, Sendable {
     let hapticsEnabled: Bool
 }
@@ -263,13 +268,14 @@ struct MotionControlConfiguration: Codable, Equatable, Sendable {
 
 enum ControlKind: Equatable, Sendable {
     case button(ButtonControlConfiguration)
+    case dpad(DPadControlConfiguration)
     case joystick(JoystickControlConfiguration)
     case motion(MotionControlConfiguration)
     case trackpad(TrackpadControlConfiguration)
 
     var outputKind: InputValueKind {
         switch self {
-        case .button:
+        case .button, .dpad:
             .none
         case .joystick, .motion, .trackpad:
             .vector2
@@ -280,6 +286,8 @@ enum ControlKind: Equatable, Sendable {
         switch self {
         case .button:
             .button
+        case .dpad:
+            .dpad
         case .joystick:
             .joystick
         case .motion:
@@ -293,6 +301,9 @@ enum ControlKind: Equatable, Sendable {
         switch self {
         case .button:
             [.triggered, .began, .ended]
+        case .dpad:
+            [.upBegan, .upEnded, .downBegan, .downEnded,
+             .leftBegan, .leftEnded, .rightBegan, .rightEnded]
         case .joystick, .motion:
             [.changed]
         case .trackpad:
@@ -334,6 +345,14 @@ struct ControlDefinition: Equatable, Sendable, Identifiable {
         )
     }
 
+    static func dpad(id: String, label: String) -> ControlDefinition {
+        ControlDefinition(
+            id: id,
+            label: label,
+            kind: .dpad(DPadControlConfiguration(hapticsEnabled: true))
+        )
+    }
+
     static func tilt(id: String, label: String) -> ControlDefinition {
         ControlDefinition(
             id: id,
@@ -371,6 +390,8 @@ extension ControlDefinition: Codable {
                 ButtonControlConfiguration.self,
                 forKey: .configuration
             ))
+        case .dpad:
+            kind = .dpad(try container.decode(DPadControlConfiguration.self, forKey: .configuration))
         case .joystick:
             kind = .joystick(try container.decode(
                 JoystickControlConfiguration.self,
@@ -398,6 +419,9 @@ extension ControlDefinition: Codable {
         case .button(let configuration):
             try container.encode(ControlCapabilityID.button, forKey: .type)
             try container.encode(configuration, forKey: .configuration)
+        case .dpad(let configuration):
+            try container.encode(ControlCapabilityID.dpad, forKey: .type)
+            try container.encode(configuration, forKey: .configuration)
         case .joystick(let configuration):
             try container.encode(ControlCapabilityID.joystick, forKey: .type)
             try container.encode(configuration, forKey: .configuration)
@@ -417,6 +441,34 @@ enum ControlEventKind: String, Codable, Equatable, Hashable, Sendable {
     case changed
     case ended
     case pinchChanged
+    case upBegan, upEnded
+    case downBegan, downEnded
+    case leftBegan, leftEnded
+    case rightBegan, rightEnded
+
+    var dpadBindingEvent: ControlEventKind? {
+        switch self {
+        case .upBegan, .upEnded: .upBegan
+        case .downBegan, .downEnded: .downBegan
+        case .leftBegan, .leftEnded: .leftBegan
+        case .rightBegan, .rightEnded: .rightBegan
+        default: nil
+        }
+    }
+
+    var isKeyPressStart: Bool {
+        switch self {
+        case .began, .upBegan, .downBegan, .leftBegan, .rightBegan: true
+        default: false
+        }
+    }
+
+    var isKeyPressEnd: Bool {
+        switch self {
+        case .ended, .upEnded, .downEnded, .leftEnded, .rightEnded: true
+        default: false
+        }
+    }
 }
 
 enum InputValueKind: String, Codable, Equatable, Sendable {

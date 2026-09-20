@@ -11,6 +11,11 @@ final class SchemaValidatorTests: XCTestCase {
                 outputKind: .none,
                 events: [.triggered, .began, .ended]
             ), ControlCapabilityDescriptor(
+                id: .dpad,
+                outputKind: .none,
+                events: [.upBegan, .upEnded, .downBegan, .downEnded,
+                         .leftBegan, .leftEnded, .rightBegan, .rightEnded]
+            ), ControlCapabilityDescriptor(
                 id: .joystick,
                 outputKind: .vector2,
                 events: [.changed]
@@ -62,6 +67,37 @@ final class SchemaValidatorTests: XCTestCase {
             )
             XCTAssertEqual(try SchemaValidator.binding(for: event, in: document).id, "next-binding")
         }
+    }
+
+    func testDPadRequiresFourMappingsAndRoutesPressAndRelease() throws {
+        let bindings: [ControlBinding] = [
+            (.upBegan, .upArrow), (.downBegan, .downArrow),
+            (.leftBegan, .leftArrow), (.rightBegan, .rightArrow),
+        ].map { event, key in
+            ControlBinding(id: event.rawValue, controlID: "pad", event: event,
+                           action: .keyChord(KeyChordAction(key: key, modifiers: [])))
+        }
+        let document = makeDocument(
+            controls: [.dpad(id: "pad", label: "Movement")],
+            items: [ControllerLayoutItem(controlID: "pad", frame: LayoutRect(x: 0.2, y: 0.2, width: 0.6, height: 0.6))],
+            bindings: bindings
+        )
+        XCTAssertNoThrow(try SchemaValidator.validate(document))
+        for (event, expected) in [(ControlEventKind.upBegan, "upBegan"),
+                                  (.upEnded, "upBegan"),
+                                  (.leftBegan, "leftBegan"),
+                                  (.leftEnded, "leftBegan")] {
+            let input = ControlEvent(controllerID: document.id, revision: document.revision,
+                                     controlID: "pad", event: event, sequence: 1,
+                                     timestamp: Date(), value: .none)
+            XCTAssertEqual(try SchemaValidator.binding(for: input, in: document).id, expected)
+        }
+        XCTAssertThrowsError(try SchemaValidator.validate(makeDocument(
+            controls: document.controls, items: document.layout.items,
+            bindings: Array(bindings.dropLast())
+        )))
+        let encoded = try JSONEncoder().encode(document)
+        XCTAssertEqual(try JSONDecoder().decode(ControllerDocument.self, from: encoded), document)
     }
 
     func testTrackpadDragAndPinchRouteToSeparateActions() throws {

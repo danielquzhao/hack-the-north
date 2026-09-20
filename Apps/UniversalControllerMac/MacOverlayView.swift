@@ -795,6 +795,7 @@ private extension MacOverlayView {
         switch control.kind {
         case .button(let configuration):
             Color(hex: configuration.tintHex) ?? .indigo
+        case .dpad: .gray
         case .joystick: .blue
         case .motion: .teal
         case .trackpad: .purple
@@ -923,7 +924,9 @@ private extension MacOverlayView {
 
     @ViewBuilder
     func actionInspector(_ id: String) -> some View {
-        if let control = draft?.control(id: id), case .trackpad = control.kind {
+        if let control = draft?.control(id: id), case .dpad = control.kind {
+            dpadInspector(id)
+        } else if let control = draft?.control(id: id), case .trackpad = control.kind {
             trackpadInspector(id)
         } else if let action = draft?.bindings.first(where: { $0.controlID == id })?.action {
             switch action {
@@ -945,6 +948,22 @@ private extension MacOverlayView {
                 }
             case .mouseDrag, .scroll:
                 trackpadInspector(id)
+            }
+        }
+    }
+
+    func dpadInspector(_ id: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Record a shortcut for each direction. Hold a direction to hold its key.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ForEach([("Up", ControlEventKind.upBegan),
+                     ("Down", .downBegan),
+                     ("Left", .leftBegan),
+                     ("Right", .rightBegan)], id: \.1) { label, event in
+                Text(label.uppercased())
+                    .font(.caption.weight(.semibold))
+                keyChordInspector(id, event: event)
             }
         }
     }
@@ -1386,24 +1405,39 @@ private struct EditablePreviewControl: View {
                 }
                 .shadow(color: .black.opacity(0.25), radius: isSelected ? 8 : 3, y: 2)
 
-            VStack(spacing: 2) {
-                Text(title)
-                    .font(subtitle == nil
-                          ? .caption.weight(.semibold)
-                          : .title3.weight(.heavy))
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.caption2.weight(.medium))
-                        .opacity(0.85)
-                        .lineLimit(1)
+            if case .dpad = control.kind {
+                VStack(spacing: 3) {
+                    Image(systemName: "triangle.fill")
+                    HStack(spacing: 18) {
+                        Image(systemName: "triangle.fill").rotationEffect(.degrees(-90))
+                        Image(systemName: "triangle.fill").rotationEffect(.degrees(90))
+                    }
+                    Image(systemName: "triangle.fill").rotationEffect(.degrees(180))
+                    Text(title).font(.caption2.weight(.semibold)).lineLimit(1)
                 }
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(.white)
+                .allowsHitTesting(false)
+            } else {
+                VStack(spacing: 2) {
+                    Text(title)
+                        .font(subtitle == nil
+                              ? .caption.weight(.semibold)
+                              : .title3.weight(.heavy))
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.caption2.weight(.medium))
+                            .opacity(0.85)
+                            .lineLimit(1)
+                    }
+                }
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+                .padding(8)
+                .minimumScaleFactor(0.55)
+                .lineLimit(2)
+                .allowsHitTesting(false)
             }
-            .foregroundStyle(.white)
-            .multilineTextAlignment(.center)
-            .padding(8)
-            .minimumScaleFactor(0.55)
-            .lineLimit(2)
-            .allowsHitTesting(false)
 
             if isSelected {
                 ForEach(ResizeHandle.allCases, id: \.self) { handle in

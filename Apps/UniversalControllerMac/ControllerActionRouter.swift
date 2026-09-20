@@ -34,28 +34,27 @@ final class ControllerActionRouter {
         let binding = try SchemaValidator.binding(for: event, in: document)
         switch binding.action {
         case .keyChord(let action):
-            switch event.event {
-            case .began:
-                guard heldKeys[event.controlID] == nil else { return }
+            let holdID = event.event.dpadBindingEvent.map { "\(event.controlID):\($0.rawValue)" }
+                ?? event.controlID
+            if event.event.isKeyPressStart {
+                guard heldKeys[holdID] == nil else { return }
                 if heldKeys.values.contains(action) {
-                    heldKeys[event.controlID] = action
+                    heldKeys[holdID] = action
                     return
                 }
                 try await MacActionExecutor.pressKeyChord(action, to: application)
                 if active {
-                    heldKeys[event.controlID] = action
+                    heldKeys[holdID] = action
                 } else {
                     MacActionExecutor.releaseKeyChord(action)
                 }
-            case .ended:
-                guard let held = heldKeys.removeValue(forKey: event.controlID) else { return }
+            } else if event.event.isKeyPressEnd {
+                guard let held = heldKeys.removeValue(forKey: holdID) else { return }
                 if !heldKeys.values.contains(held) {
                     MacActionExecutor.releaseKeyChord(held)
                 }
-            case .triggered:
+            } else if event.event == .triggered {
                 try await MacActionExecutor.sendKeyChord(action, to: application)
-            case .changed, .pinchChanged:
-                return
             }
         case .mouseMove(let action):
             guard case .vector2(let value) = event.value else { return }
