@@ -38,6 +38,16 @@ final class SchemaValidatorTests: XCTestCase {
                 defaultHeight: 0.36,
                 occupiesLayout: true
             ), ControlCapabilityDescriptor(
+                id: .motion,
+                outputKind: .vector2,
+                events: [.changed],
+                displayName: "Tilt",
+                systemImage: "gyroscope",
+                summary: "Phone tilt moves the Mac pointer",
+                defaultWidth: 0.16,
+                defaultHeight: 0.12,
+                occupiesLayout: false
+            ), ControlCapabilityDescriptor(
                 id: .trackpad,
                 outputKind: .vector2,
                 events: [.began, .changed, .ended, .pinchChanged],
@@ -66,7 +76,8 @@ final class SchemaValidatorTests: XCTestCase {
             )]
         )
         XCTAssertEqual(ControllerCapabilityCatalog.current.buttonFaces, ButtonFace.allCases)
-        XCTAssertEqual(ControlCapabilityID.allCases, [.button, .dpad, .joystick, .trackpad])
+        XCTAssertEqual(ControllerCapabilityCatalog.current.motionSources, [.tilt])
+        XCTAssertEqual(ControlCapabilityID.allCases, [.button, .dpad, .joystick, .motion, .trackpad])
     }
 
     func testValidButtonControllerPassesValidation() {
@@ -281,21 +292,25 @@ final class SchemaValidatorTests: XCTestCase {
         XCTAssertThrowsError(try SchemaValidator.binding(for: event, in: document))
     }
 
-    func testGamepadControlsAndJoystickBindingValidate() throws {
+    func testGamepadControlsAndMotionBindingValidate() throws {
         let document = makeDocument(
             controls: [
                 .button(id: "a", label: "Next", face: .a),
                 .joystick(id: "stick", label: "Pointer"),
+                .tilt(id: "tilt", label: "Tilt Pointer"),
             ],
             items: [
                 ControllerLayoutItem(controlID: "a", frame: LayoutRect(x: 0.05, y: 0.05, width: 0.4, height: 0.25)),
                 ControllerLayoutItem(controlID: "stick", frame: LayoutRect(x: 0.55, y: 0.05, width: 0.4, height: 0.55)),
+                ControllerLayoutItem(controlID: "tilt", frame: ControllerCapabilityCatalog.offCanvasSensorFrame),
             ],
             bindings: [
                 ControlBinding(id: "a-press", controlID: "a", event: .triggered,
                                action: .keyChord(KeyChordAction(key: .rightArrow, modifiers: []))),
                 ControlBinding(id: "stick-move", controlID: "stick", event: .changed,
                                action: .mouseMove(MouseMoveAction(gain: 14, deadZone: 0.1))),
+                ControlBinding(id: "tilt-move", controlID: "tilt", event: .changed,
+                               action: .mouseMove(MouseMoveAction(gain: 9, deadZone: 0.18))),
             ]
         )
         try SchemaValidator.validate(document)
@@ -305,21 +320,21 @@ final class SchemaValidatorTests: XCTestCase {
             .schemaSnapshot(document)
         )
 
-        let joystickEvent = ControlEvent(
+        let motionEvent = ControlEvent(
             controllerID: document.id,
             revision: document.revision,
-            controlID: "stick",
+            controlID: "tilt",
             event: .changed,
             sequence: 1,
             timestamp: Date(),
             value: .vector2(Vector2Value(x: 0.4, y: -0.2))
         )
-        XCTAssertEqual(try SchemaValidator.binding(for: joystickEvent, in: document).id, "stick-move")
+        XCTAssertEqual(try SchemaValidator.binding(for: motionEvent, in: document).id, "tilt-move")
 
         let invalidEvent = ControlEvent(
             controllerID: document.id,
             revision: document.revision,
-            controlID: "stick",
+            controlID: "tilt",
             event: .changed,
             sequence: 2,
             timestamp: Date(),

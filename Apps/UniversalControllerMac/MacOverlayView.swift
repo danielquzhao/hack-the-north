@@ -824,12 +824,23 @@ private extension MacOverlayView {
         canvasSize: CGSize
     ) {
         guard let draft, canEditLayout else { return }
+        if asset.id == .motion,
+           draft.controls.contains(where: {
+               if case .motion = $0.kind { return true }
+               return false
+           }) {
+            editorState.generationError = "Only one tilt control is supported per controller."
+            return
+        }
 
         let controlID = uniqueControlID(in: draft)
         let control = asset.makeControl(id: controlID)
         let bindings = asset.makeDefaultBindings(controlID: controlID)
 
         func initialFrame(for orientation: ControllerOrientation) -> LayoutRect {
+            if asset.id == .motion {
+                return ControllerCapabilityCatalog.offCanvasSensorFrame
+            }
             var frame = asset.defaultFrame
             if orientation == draft.preferredOrientation,
                let dropPoint, canvasSize.width > 0, canvasSize.height > 0 {
@@ -884,6 +895,7 @@ private extension MacOverlayView {
             bindings: draft.bindings + bindings
         )
         editorState.layoutDirty = true
+        editorState.generationError = nil
         selectedControlID = controlID
         selectedToolTab = .controls
     }
@@ -1023,12 +1035,16 @@ private extension MacOverlayView {
             HStack {
                 Spacer()
                 if let draft {
-                    controllerPreview(draft)
-                        .frame(
-                            width: draft.preferredOrientation == .portrait ? 320 : 600,
-                            height: draft.preferredOrientation == .portrait ? 560 : 300
-                        )
-                        .disabled(!canEditLayout)
+                    let previewWidth: CGFloat = draft.preferredOrientation == .portrait ? 320 : 600
+                    let previewHeight: CGFloat = draft.preferredOrientation == .portrait ? 560 : 300
+                    VStack(alignment: .trailing, spacing: 10) {
+                        controllerPreview(draft)
+                            .frame(width: previewWidth, height: previewHeight)
+                            .disabled(!canEditLayout)
+
+                        tiltSensorBadges(for: draft)
+                            .frame(width: previewWidth, alignment: .trailing)
+                    }
                 } else {
                     EmptyPhonePreview()
                         .frame(width: 600, height: 350)
@@ -1055,6 +1071,54 @@ private extension MacOverlayView {
         .frame(maxHeight: .infinity)
     }
 
+    @ViewBuilder
+    func tiltSensorBadges(for draft: ControllerDocument) -> some View {
+        let tiltControls = draft.controls.filter {
+            if case .motion = $0.kind { return true }
+            return false
+        }
+        if tiltControls.isEmpty {
+            EmptyView()
+        } else {
+            HStack {
+                Spacer(minLength: 0)
+                ForEach(tiltControls) { control in
+                    Button {
+                        selectedControlID = control.id
+                        selectedToolTab = .controls
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "gyroscope")
+                                .font(.caption.weight(.semibold))
+                            Text(control.label)
+                                .font(.caption.weight(.semibold))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(selectedControlID == control.id ? .primary : .secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(
+                            selectedControlID == control.id
+                                ? Color.primary.opacity(0.12)
+                                : Color.primary.opacity(0.06),
+                            in: Capsule()
+                        )
+                        .overlay(
+                            Capsule().strokeBorder(
+                                selectedControlID == control.id
+                                    ? Color.primary.opacity(0.35)
+                                    : Color.primary.opacity(0.12)
+                            )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canEditLayout)
+                    .help("Tilt sensor — not placed on the phone canvas")
+                }
+            }
+        }
+    }
+
     func orientationPicker(for draft: ControllerDocument) -> some View {
         Picker("Phone orientation", selection: Binding(
             get: { draft.preferredOrientation },
@@ -1075,7 +1139,8 @@ private extension MacOverlayView {
             let size = geometry.size
             ZStack(alignment: .topLeading) {
                 ForEach(draft.layout.items) { item in
-                    if let control = draft.control(id: item.controlID) {
+                    if let control = draft.control(id: item.controlID),
+                       control.kind.capabilityID != .motion {
                         let occupiesLayout = ControllerCapabilityCatalog.current.occupiesLayout(
                             control.kind.capabilityID
                         )
@@ -1177,20 +1242,26 @@ private extension MacOverlayView {
                     ))
                     .textFieldStyle(.roundedBorder)
 
-                    let canvasWidth = draft.preferredOrientation == .portrait ? 320.0 : 600.0
-                    let canvasHeight = draft.preferredOrientation == .portrait ? 560.0 : 300.0
-                    let frame = ControllerLayoutGeometry.visibleFrame(
-                        for: control.kind,
-                        in: draft.layout.items[index].frame,
-                        canvasWidth: canvasWidth,
-                        canvasHeight: canvasHeight
-                    )
-                    Text("Position \(Int(frame.x * 100))%, \(Int(frame.y * 100))%")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("Size \(Int(frame.width * 100))% × \(Int(frame.height * 100))%")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if control.kind.capabilityID == .motion {
+                        Text("Shown under the preview as a sensor badge, not on the phone canvas.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        let canvasWidth = draft.preferredOrientation == .portrait ? 320.0 : 600.0
+                        let canvasHeight = draft.preferredOrientation == .portrait ? 560.0 : 300.0
+                        let frame = ControllerLayoutGeometry.visibleFrame(
+                            for: control.kind,
+                            in: draft.layout.items[index].frame,
+                            canvasWidth: canvasWidth,
+                            canvasHeight: canvasHeight
+                        )
+                        Text("Position \(Int(frame.x * 100))%, \(Int(frame.y * 100))%")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Size \(Int(frame.width * 100))% × \(Int(frame.height * 100))%")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
 
                     if case .button(let configuration) = control.kind {
                         Picker("Face", selection: Binding(

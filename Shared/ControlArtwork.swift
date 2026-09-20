@@ -12,6 +12,8 @@ struct ControlArtwork: View {
             DPadArtwork(label: control.label, activeDirection: nil)
         case .joystick:
             JoystickArtwork(label: control.label, offset: .zero)
+        case .motion:
+            TiltArtwork(label: control.label, isAvailable: true)
         case .trackpad:
             TrackpadArtwork(label: control.label)
         }
@@ -237,6 +239,30 @@ struct TrackpadArtwork: View {
         .foregroundStyle(.white)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+struct TiltArtwork: View {
+    let label: String
+    let isAvailable: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "gyroscope")
+                .font(.body.weight(.semibold))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(.caption.weight(.semibold))
+                Text(isAvailable ? "Tilt · tap recenter" : "Unavailable")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.white.opacity(0.12), in: Capsule())
+        .overlay(Capsule().strokeBorder(.white.opacity(0.2)))
     }
 }
 

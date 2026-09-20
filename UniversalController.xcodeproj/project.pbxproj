@@ -396,15 +396,17 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 9WYVA5AT3T;
+				DEVELOPMENT_TEAM = 5BA4B43Y74;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Apps/UniversalControllerPhone/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Universal Controller";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR code displayed by Universal Controller on your Mac.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect directly to your Mac and send controller input.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "Use phone tilt as controller input when you enable it.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -430,15 +432,17 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 9WYVA5AT3T;
+				DEVELOPMENT_TEAM = 5BA4B43Y74;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Apps/UniversalControllerPhone/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Universal Controller";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR code displayed by Universal Controller on your Mac.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect directly to your Mac and send controller input.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "Use phone tilt as controller input when you enable it.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
