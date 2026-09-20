@@ -25,7 +25,6 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
     let controls: [ControlCapabilityDescriptor]
     let actions: [ActionCapabilityDescriptor]
     let buttonFaces: [ButtonFace]
-    let motionSources: [MotionSource]
 
     static let current = ControllerCapabilityCatalog(
         schemaVersion: ControllerDocument.currentSchemaVersion,
@@ -65,17 +64,6 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
                 occupiesLayout: true
             ),
             ControlCapabilityDescriptor(
-                id: .motion,
-                outputKind: .vector2,
-                events: [.changed],
-                displayName: "Tilt",
-                systemImage: "gyroscope",
-                summary: "Phone tilt moves the Mac pointer",
-                defaultWidth: 0.16,
-                defaultHeight: 0.12,
-                occupiesLayout: false
-            ),
-            ControlCapabilityDescriptor(
                 id: .trackpad,
                 outputKind: .vector2,
                 events: [.began, .changed, .ended, .pinchChanged],
@@ -105,8 +93,7 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
                 acceptedInputKinds: [.vector2]
             ),
         ],
-        buttonFaces: ButtonFace.allCases,
-        motionSources: MotionSource.allCases
+        buttonFaces: ButtonFace.allCases
     )
 
     func control(id: ControlCapabilityID) -> ControlCapabilityDescriptor? {
@@ -166,13 +153,6 @@ enum SchemaValidator {
                 throw error("Control '\(control.id)' has an invalid label.")
             }
         }
-        guard document.controls.filter({
-            if case .motion = $0.kind { return true }
-            return false
-        }).count <= 1 else {
-            throw error("Only one motion control is supported per controller.")
-        }
-
         try validateLayout(
             document.layouts.portrait,
             orientation: .portrait,
@@ -391,8 +371,6 @@ extension ControlCapabilityDescriptor {
             .dpad(id: id, label: displayName)
         case .joystick:
             .joystick(id: id, label: displayName)
-        case .motion:
-            .tilt(id: id, label: displayName)
         case .trackpad:
             .trackpad(id: id, label: displayName)
         }
@@ -420,7 +398,7 @@ extension ControlCapabilityDescriptor {
                     action: .keyChord(KeyChordAction(key: key, modifiers: []))
                 )
             }
-        case .joystick, .motion:
+        case .joystick:
             [ControlBinding(
                 id: "\(controlID)-move",
                 controlID: controlID,
