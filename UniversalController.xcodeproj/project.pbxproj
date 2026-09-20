@@ -32,6 +32,8 @@
 		A10000000000000000000017 /* TargetWindowScreenshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001E /* TargetWindowScreenshot.swift */; };
 		A10000000000000000000018 /* ControlArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001F /* ControlArtwork.swift */; };
 		A10000000000000000000019 /* ControlArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001F /* ControlArtwork.swift */; };
+		A1000000000000000000001A /* ControllerSessionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* ControllerSessionPack.swift */; };
+		A1000000000000000000001B /* ControllerSessionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* ControllerSessionPack.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -60,6 +62,7 @@
 		B1000000000000000000001D /* OpenAIControllerGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIControllerGenerator.swift; sourceTree = "<group>"; };
 		B1000000000000000000001E /* TargetWindowScreenshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TargetWindowScreenshot.swift; sourceTree = "<group>"; };
 		B1000000000000000000001F /* ControlArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlArtwork.swift; sourceTree = "<group>"; };
+		B10000000000000000000020 /* ControllerSessionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerSessionPack.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -145,6 +148,7 @@
 				B10000000000000000000019 /* ControllerSchema.swift */,
 				B1000000000000000000001A /* SchemaValidator.swift */,
 				B1000000000000000000001F /* ControlArtwork.swift */,
+				B10000000000000000000020 /* ControllerSessionPack.swift */,
 				B10000000000000000000010 /* PairingProtocol.swift */,
 				B10000000000000000000011 /* FramedConnection.swift */,
 			);
@@ -259,6 +263,7 @@
 				A10000000000000000000010 /* ControllerSchema.swift in Sources */,
 				A10000000000000000000011 /* SchemaValidator.swift in Sources */,
 				A10000000000000000000018 /* ControlArtwork.swift in Sources */,
+				A1000000000000000000001A /* ControllerSessionPack.swift in Sources */,
 				A10000000000000000000014 /* ControllerActionRouter.swift in Sources */,
 				A10000000000000000000016 /* OpenAIControllerGenerator.swift in Sources */,
 				A10000000000000000000017 /* TargetWindowScreenshot.swift in Sources */,
@@ -278,6 +283,7 @@
 				A10000000000000000000012 /* ControllerSchema.swift in Sources */,
 				A10000000000000000000013 /* SchemaValidator.swift in Sources */,
 				A10000000000000000000019 /* ControlArtwork.swift in Sources */,
+				A1000000000000000000001B /* ControllerSessionPack.swift in Sources */,
 				A10000000000000000000015 /* ControllerRendererView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
