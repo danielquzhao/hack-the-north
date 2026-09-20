@@ -1,13 +1,6 @@
 import AppKit
 import SwiftUI
 
-enum DemoControllerStyle: String, CaseIterable, Identifiable {
-    case presenter = "Presenter"
-    case gamepad = "Gamepad"
-
-    var id: Self { self }
-}
-
 private enum EditorToolTab: String, CaseIterable, Identifiable {
     case controls = "Controls"
     case assets = "Assets"
@@ -26,8 +19,6 @@ private enum EditorToolTab: String, CaseIterable, Identifiable {
 
 @MainActor
 final class ControllerEditorState: ObservableObject {
-    @Published var demoStyle: DemoControllerStyle = .presenter
-    @Published var includeTilt = false
     @Published var draft: ControllerDocument?
     @Published var selectedControlID: String?
     @Published var prompt = ""
@@ -35,7 +26,6 @@ final class ControllerEditorState: ObservableObject {
     @Published var isGenerating = false
     @Published var generationStatus: String?
     @Published var generationError: String?
-    @Published var draftWasGenerated = false
     @Published var isIterativePrompt = false
     @Published var layoutDirty = false
     @Published var capturingShortcutControlID: String?
@@ -48,7 +38,6 @@ struct MacOverlayView: View {
     @ObservedObject var editorState: ControllerEditorState
     let onClose: () -> Void
     let onRequestPermission: () -> Void
-    let onMakeDraft: (DemoControllerStyle, Bool) -> ControllerDocument?
     let onGenerate: (String) -> Void
     let onSaveAPIKey: (String) -> String?
     let onRemoveAPIKey: () -> Void
@@ -63,16 +52,6 @@ struct MacOverlayView: View {
     @State private var apiKeyError: String?
     @State private var showingSettings = true
     @State private var selectedToolTab: EditorToolTab = .controls
-
-    private var demoStyle: DemoControllerStyle {
-        get { editorState.demoStyle }
-        nonmutating set { editorState.demoStyle = newValue }
-    }
-
-    private var includeTilt: Bool {
-        get { editorState.includeTilt }
-        nonmutating set { editorState.includeTilt = newValue }
-    }
 
     private var draft: ControllerDocument? {
         get { editorState.draft }
@@ -458,10 +437,6 @@ struct MacOverlayView: View {
                             Text("\(controller.name) is ready on your iPhone")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                        } else {
-                            Text("Pair from Keynote to send the demo button")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
                     }
                     Spacer()
@@ -571,16 +546,6 @@ private extension MacOverlayView {
         } catch {
             return error.localizedDescription
         }
-    }
-
-    func makeDraft() {
-        guard canEditDraft else { return }
-        draft = onMakeDraft(demoStyle, includeTilt)
-        selectedControlID = draft?.layout.items.first?.controlID
-        editorState.draftWasGenerated = false
-        editorState.isIterativePrompt = false
-        editorState.layoutDirty = false
-        editorState.generationError = nil
     }
 
     func replaceDraft(
@@ -832,6 +797,9 @@ private extension MacOverlayView {
             Color(hex: configuration.tintHex) ?? .indigo
         case .joystick: .blue
         case .motion: .teal
+        case .trackpad: .purple
+        case .pinchPad: .orange
+        case .rotationPad: .pink
         }
     }
 
@@ -957,25 +925,30 @@ private extension MacOverlayView {
 
     @ViewBuilder
     func actionInspector(_ id: String) -> some View {
-        if let action = draft?.bindings.first(where: { $0.controlID == id })?.action {
+        if let control = draft?.control(id: id), case .trackpad = control.kind {
+            trackpadInspector(id)
+        } else if let control = draft?.control(id: id), case .pinchPad = control.kind {
+            ForEach(PinchDirection.allCases, id: \.self) { direction in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(direction == .inward ? "Pinch In" : "Pinch Out")
+                        .font(.subheadline.weight(.semibold))
+                    keyChordInspector(id, event: direction.event)
+                }
+                .padding(.vertical, 4)
+            }
+        } else if let control = draft?.control(id: id), case .rotationPad = control.kind {
+            ForEach(RotationDirection.allCases, id: \.self) { direction in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(direction == .clockwise ? "Rotate Clockwise" : "Rotate Counterclockwise")
+                        .font(.subheadline.weight(.semibold))
+                    keyChordInspector(id, event: direction.event)
+                }
+                .padding(.vertical, 4)
+            }
+        } else if let action = draft?.bindings.first(where: { $0.controlID == id })?.action {
             switch action {
-            case .keyChord(let action):
-                ShortcutRecorderField(
-                    chord: action,
-                    isRecording: editorState.capturingShortcutControlID == id,
-                    onStartRecording: {
-                        editorState.capturingShortcutControlID = id
-                    },
-                    onCancelRecording: {
-                        if editorState.capturingShortcutControlID == id {
-                            editorState.capturingShortcutControlID = nil
-                        }
-                    },
-                    onCapture: { chord in
-                        setAction(id, .keyChord(chord))
-                        editorState.capturingShortcutControlID = nil
-                    }
-                )
+            case .keyChord:
+                keyChordInspector(id)
             case .mouseMove:
                 Text("Move the Mac pointer")
                     .font(.subheadline)
@@ -990,8 +963,101 @@ private extension MacOverlayView {
                         set: { setAction(id, .mouseMove(MouseMoveAction(gain: currentMouseMove(id).gain, deadZone: $0))) }
                     ), in: 0...0.5)
                 }
+            case .mouseDrag, .scroll:
+                trackpadInspector(id)
             }
         }
+    }
+
+    func trackpadInspector(_ id: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("ONE FINGER DRAG")
+                .font(.caption.weight(.semibold))
+            Picker("Mouse button", selection: Binding(
+                get: { currentMouseDrag(id).button },
+                set: { button in
+                    let current = currentMouseDrag(id)
+                    setAction(id, .mouseDrag(MouseDragAction(
+                        gain: current.gain, deadZone: current.deadZone,
+                        button: button, modifiers: current.modifiers
+                    )), event: .changed)
+                }
+            )) {
+                ForEach(MouseButton.allCases, id: \.self) { button in
+                    Text(button.rawValue.capitalized).tag(button)
+                }
+            }
+            Stepper("Drag speed: \(Int(currentMouseDrag(id).gain))", value: Binding(
+                get: { currentMouseDrag(id).gain },
+                set: { gain in
+                    let current = currentMouseDrag(id)
+                    setAction(id, .mouseDrag(MouseDragAction(
+                        gain: gain, deadZone: current.deadZone,
+                        button: current.button, modifiers: current.modifiers
+                    )), event: .changed)
+                }
+            ), in: 1...40, step: 1)
+            VStack(alignment: .leading) {
+                Text("Dead zone: \(currentMouseDrag(id).deadZone, specifier: "%.2f")")
+                Slider(value: Binding(
+                    get: { currentMouseDrag(id).deadZone },
+                    set: { deadZone in
+                        let current = currentMouseDrag(id)
+                        setAction(id, .mouseDrag(MouseDragAction(
+                            gain: current.gain, deadZone: deadZone,
+                            button: current.button, modifiers: current.modifiers
+                        )), event: .changed)
+                    }
+                ), in: 0...0.5)
+            }
+            ForEach(KeyModifier.allCases, id: \.self) { modifier in
+                Toggle(modifier.rawValue.capitalized, isOn: Binding(
+                    get: { currentMouseDrag(id).modifiers.contains(modifier) },
+                    set: { enabled in
+                        let current = currentMouseDrag(id)
+                        var modifiers = current.modifiers.filter { $0 != modifier }
+                        if enabled { modifiers.append(modifier) }
+                        setAction(id, .mouseDrag(MouseDragAction(
+                            gain: current.gain, deadZone: current.deadZone,
+                            button: current.button, modifiers: modifiers
+                        )), event: .changed)
+                    }
+                ))
+            }
+            Divider()
+            Text("TWO FINGER PINCH")
+                .font(.caption.weight(.semibold))
+            Text("Scroll to zoom")
+                .font(.subheadline)
+            Stepper("Zoom speed: \(Int(currentScroll(id).gain))", value: Binding(
+                get: { currentScroll(id).gain },
+                set: { setAction(id, .scroll(ScrollAction(gain: $0)), event: .pinchChanged) }
+            ), in: 1...40, step: 1)
+        }
+    }
+
+    func keyChordInspector(_ id: String, event: ControlEventKind? = nil) -> some View {
+        let captureID = event.map { "\(id)::\($0.rawValue)" } ?? id
+        let chord = KeyChordAction(
+            key: currentKey(id, event: event),
+            modifiers: currentModifiers(id, event: event)
+        )
+        return ShortcutRecorderField(
+            chord: chord,
+            isRecording: editorState.capturingShortcutControlID == captureID,
+            onStartRecording: {
+                editorState.capturingShortcutControlID = captureID
+            },
+            onCancelRecording: {
+                if editorState.capturingShortcutControlID == captureID {
+                    editorState.capturingShortcutControlID = nil
+                }
+            },
+            onCapture: { captured in
+                setAction(id, .keyChord(captured), event: event)
+                editorState.capturingShortcutControlID = nil
+            }
+        )
     }
 
     func updateControl(_ id: String, transform: (ControlDefinition) -> ControlDefinition) {
@@ -1006,19 +1072,51 @@ private extension MacOverlayView {
         return configuration
     }
 
-    func setAction(_ id: String, _ action: ActionDefinition) {
+    func setAction(_ id: String, _ action: ActionDefinition, event: ControlEventKind? = nil) {
         guard let draft, canEditLayout else { return }
         replaceDraft(bindings: draft.bindings.map { binding in
-            binding.controlID == id
+            binding.controlID == id && (event == nil || binding.event == event)
                 ? ControlBinding(id: binding.id, controlID: id, event: binding.event, action: action)
                 : binding
         })
+    }
+
+    func currentKey(_ id: String, event: ControlEventKind? = nil) -> SemanticKey {
+        guard let binding = draft?.bindings.first(where: {
+            $0.controlID == id && (event == nil || $0.event == event)
+        }),
+              case .keyChord(let action) = binding.action else { return .rightArrow }
+        return action.key
+    }
+
+    func currentModifiers(_ id: String, event: ControlEventKind? = nil) -> [KeyModifier] {
+        guard let binding = draft?.bindings.first(where: {
+            $0.controlID == id && (event == nil || $0.event == event)
+        }),
+              case .keyChord(let action) = binding.action else { return [] }
+        return action.modifiers
     }
 
     func currentMouseMove(_ id: String) -> MouseMoveAction {
         guard let binding = draft?.bindings.first(where: { $0.controlID == id }),
               case .mouseMove(let action) = binding.action else {
             return MouseMoveAction(gain: 10, deadZone: 0.1)
+        }
+        return action
+    }
+
+    func currentMouseDrag(_ id: String) -> MouseDragAction {
+        guard let binding = draft?.binding(controlID: id, event: .changed),
+              case .mouseDrag(let action) = binding.action else {
+            return MouseDragAction(gain: 10, deadZone: 0, button: .left, modifiers: [])
+        }
+        return action
+    }
+
+    func currentScroll(_ id: String) -> ScrollAction {
+        guard let binding = draft?.binding(controlID: id, event: .pinchChanged),
+              case .scroll(let action) = binding.action else {
+            return ScrollAction(gain: 10)
         }
         return action
     }

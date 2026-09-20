@@ -16,6 +16,7 @@ final class ControllerActionRouter {
     let document: ControllerDocument
     let application: NSRunningApplication
     private var heldKeys: [String: KeyChordAction] = [:]
+    private var activeDrag: (controlID: String, action: MouseDragAction)?
     private var active = true
 
     init(document: ControllerDocument, application: NSRunningApplication) throws {
@@ -51,14 +52,44 @@ final class ControllerActionRouter {
                 if !heldKeys.values.contains(held) {
                     MacActionExecutor.releaseKeyChord(held)
                 }
-            case .triggered:
+            case .triggered, .pinchedIn, .pinchedOut,
+                 .rotatedClockwise, .rotatedCounterclockwise:
                 try await MacActionExecutor.sendKeyChord(action, to: application)
-            case .changed:
+            case .changed, .pinchChanged:
                 return
             }
         case .mouseMove(let action):
             guard case .vector2(let value) = event.value else { return }
             try MacActionExecutor.sendMouseMove(action, value: value, to: application)
+        case .mouseDrag(let action):
+            guard case .vector2(let value) = event.value else { return }
+            switch event.event {
+            case .began:
+                if let activeDrag { MacActionExecutor.endMouseDrag(activeDrag.action) }
+                activeDrag = nil
+                try await MacActionExecutor.beginMouseDrag(action, to: application)
+                if active {
+                    activeDrag = (event.controlID, action)
+                } else {
+                    MacActionExecutor.endMouseDrag(action)
+                }
+            case .changed:
+                guard activeDrag?.controlID == event.controlID else { return }
+                try MacActionExecutor.moveMouseDrag(action, value: value, to: application)
+            case .ended:
+                guard activeDrag?.controlID == event.controlID else { return }
+                activeDrag = nil
+                MacActionExecutor.endMouseDrag(action)
+            default:
+                return
+            }
+        case .scroll(let action):
+            guard case .vector2(let value) = event.value else { return }
+            if let activeDrag {
+                MacActionExecutor.endMouseDrag(activeDrag.action)
+                self.activeDrag = nil
+            }
+            try await MacActionExecutor.sendScroll(action, value: value, to: application)
         }
     }
 
@@ -68,5 +99,11 @@ final class ControllerActionRouter {
             MacActionExecutor.releaseKeyChord(action)
         }
         heldKeys.removeAll()
+        cancelActiveDrag()
+    }
+
+    func cancelActiveDrag() {
+        if let activeDrag { MacActionExecutor.endMouseDrag(activeDrag.action) }
+        activeDrag = nil
     }
 }

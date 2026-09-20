@@ -39,7 +39,6 @@ final class OverlayPanelController {
         if editorState.draft?.target.bundleIdentifier != context?.application.bundleIdentifier {
             editorState.draft = nil
             editorState.selectedControlID = nil
-            editorState.draftWasGenerated = false
             editorState.isIterativePrompt = false
             editorState.layoutDirty = false
         }
@@ -115,9 +114,6 @@ final class OverlayPanelController {
             editorState: editorState,
             onClose: { [weak self] in self?.close() },
             onRequestPermission: { MacActionExecutor.requestNextPermission() },
-            onMakeDraft: { [weak self] style, includeTilt in
-                self?.makeController(context: context, style: style, includeTilt: includeTilt)
-            },
             onGenerate: { [weak self] request in
                 self?.startGeneration(request: request, context: context)
             },
@@ -182,28 +178,6 @@ final class OverlayPanelController {
                     self?.lastPanelOrigin = panel.frame.origin
                 }
             }
-        }
-    }
-
-    private func makeController(
-        context: AppContext?,
-        style: DemoControllerStyle,
-        includeTilt: Bool
-    ) -> ControllerDocument? {
-        guard let application = context?.application,
-              MacActionExecutor.isKeynote(application),
-              let bundleID = application.bundleIdentifier else {
-            return nil
-        }
-        let target = ControllerTarget(
-            bundleIdentifier: bundleID,
-            displayName: context?.displayName ?? "Keynote"
-        )
-        switch style {
-        case .presenter:
-            return makePresenterController(target: target)
-        case .gamepad:
-            return makeGamepadController(target: target, includeTilt: includeTilt)
         }
     }
 
@@ -345,7 +319,6 @@ final class OverlayPanelController {
             guard generationID == id else { return }
             editorState.draft = document
             editorState.selectedControlID = document.layout.items.first?.controlID
-            editorState.draftWasGenerated = true
             editorState.isIterativePrompt = true
             editorState.layoutDirty = false
             editorState.generationError = nil
@@ -357,100 +330,6 @@ final class OverlayPanelController {
                 editorState.generationError = error.localizedDescription
             }
         }
-    }
-
-    private func makePresenterController(target: ControllerTarget) -> ControllerDocument {
-        ControllerDocument(
-            schemaVersion: ControllerDocument.currentSchemaVersion,
-            id: UUID(),
-            revision: 1,
-            name: "Keynote Presenter",
-            target: target,
-            preferredOrientation: .landscape,
-            layouts: ControllerLayouts(
-                portrait: AbsoluteLayoutBuilder.fromGrid(
-                    columns: 1,
-                    specs: [("next-slide", 1, 1)]
-                ),
-                landscape: AbsoluteLayoutBuilder.fromGrid(
-                    columns: 2,
-                    specs: [("next-slide", 2, 1)]
-                )
-            ),
-            controls: [
-                .button(id: "next-slide", label: "Next Slide"),
-            ],
-            bindings: [
-                ControlBinding(
-                    id: "next-slide-binding",
-                    controlID: "next-slide",
-                    event: .triggered,
-                    action: .keyChord(KeyChordAction(
-                        key: .rightArrow,
-                        modifiers: []
-                    ))
-                ),
-            ]
-        )
-    }
-
-    private func makeGamepadController(
-        target: ControllerTarget,
-        includeTilt: Bool
-    ) -> ControllerDocument {
-        let buttons: [(id: String, label: String, face: ButtonFace, key: SemanticKey)] = [
-            ("x", "Blackout", .x, .letterB),
-            ("y", "Advance", .y, .space),
-            ("a", "Next", .a, .rightArrow),
-            ("b", "Previous", .b, .leftArrow),
-        ]
-        var controls = [ControlDefinition.joystick(id: "stick", label: "Pointer")]
-        controls += buttons.map { .button(id: $0.id, label: $0.label, face: $0.face) }
-        var portraitSpecs: [(String, Int, Int)] = [("stick", 2, 2)]
-        portraitSpecs += buttons.map { ($0.id, 1, 1) }
-        var landscapeSpecs: [(String, Int, Int)] = [("stick", 2, 2)]
-        landscapeSpecs += buttons.map { ($0.id, 1, 1) }
-        var bindings = [ControlBinding(
-            id: "stick-move",
-            controlID: "stick",
-            event: .changed,
-            action: .mouseMove(MouseMoveAction(gain: 14, deadZone: 0.1))
-        )]
-        bindings += buttons.map {
-            ControlBinding(
-                id: "\($0.id)-press",
-                controlID: $0.id,
-                event: .triggered,
-                action: .keyChord(KeyChordAction(key: $0.key, modifiers: []))
-            )
-        }
-
-        if includeTilt {
-            controls.append(.tilt(id: "tilt", label: "Tilt Pointer"))
-            portraitSpecs.append(("tilt", 2, 1))
-            landscapeSpecs.append(("tilt", 2, 1))
-            bindings.append(ControlBinding(
-                id: "tilt-move",
-                controlID: "tilt",
-                event: .changed,
-                action: .mouseMove(MouseMoveAction(gain: 9, deadZone: 0.18))
-            ))
-        }
-
-        return ControllerDocument(
-            schemaVersion: ControllerDocument.currentSchemaVersion,
-            id: UUID(),
-            revision: 1,
-            name: "Keynote Gamepad",
-            target: target,
-            preferredOrientation: .landscape,
-            layouts: ControllerLayouts(
-                portrait: AbsoluteLayoutBuilder.fromGrid(columns: 2, specs: portraitSpecs),
-                landscape: AbsoluteLayoutBuilder.fromGrid(columns: 4, specs: landscapeSpecs)
-            ),
-            controls: controls,
-            bindings: bindings
-        )
     }
 
     private func route(
@@ -469,6 +348,7 @@ final class OverlayPanelController {
         do {
             try await router.handle(event)
         } catch {
+            router.cancelActiveDrag()
             open(context: context, errorMessage: error.localizedDescription)
         }
     }

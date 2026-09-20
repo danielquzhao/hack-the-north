@@ -18,6 +18,18 @@ final class SchemaValidatorTests: XCTestCase {
                 id: .motion,
                 outputKind: .vector2,
                 events: [.changed]
+            ), ControlCapabilityDescriptor(
+                id: .trackpad,
+                outputKind: .vector2,
+                events: [.began, .changed, .ended, .pinchChanged]
+            ), ControlCapabilityDescriptor(
+                id: .pinchPad,
+                outputKind: .none,
+                events: PinchDirection.allCases.map(\.event)
+            ), ControlCapabilityDescriptor(
+                id: .rotationPad,
+                outputKind: .none,
+                events: RotationDirection.allCases.map(\.event)
             )]
         )
         XCTAssertEqual(
@@ -27,6 +39,12 @@ final class SchemaValidatorTests: XCTestCase {
                 acceptedInputKinds: [.none]
             ), ActionCapabilityDescriptor(
                 id: .mouseMove,
+                acceptedInputKinds: [.vector2]
+            ), ActionCapabilityDescriptor(
+                id: .mouseDrag,
+                acceptedInputKinds: [.vector2]
+            ), ActionCapabilityDescriptor(
+                id: .scroll,
                 acceptedInputKinds: [.vector2]
             )]
         )
@@ -52,6 +70,109 @@ final class SchemaValidatorTests: XCTestCase {
             )
             XCTAssertEqual(try SchemaValidator.binding(for: event, in: document).id, "next-binding")
         }
+    }
+
+    func testTrackpadDragAndPinchRouteToSeparateActions() throws {
+        let bindings = [
+            ControlBinding(
+                id: "pad-drag",
+                controlID: "pad",
+                event: .changed,
+                action: .mouseDrag(MouseDragAction(
+                    gain: 12, deadZone: 0, button: .middle, modifiers: []
+                ))
+            ),
+            ControlBinding(
+                id: "pad-zoom",
+                controlID: "pad",
+                event: .pinchChanged,
+                action: .scroll(ScrollAction(gain: 10))
+            ),
+        ]
+        let document = makeDocument(
+            controls: [.trackpad(id: "pad", label: "Navigate")],
+            items: [ControllerLayoutItem(
+                controlID: "pad",
+                frame: LayoutRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)
+            )],
+            bindings: bindings
+        )
+        try SchemaValidator.validate(document)
+
+        for (index, kind) in [ControlEventKind.began, .changed, .ended, .pinchChanged].enumerated() {
+            let event = ControlEvent(
+                controllerID: document.id,
+                revision: document.revision,
+                controlID: "pad",
+                event: kind,
+                sequence: UInt64(index + 1),
+                timestamp: Date(),
+                value: .vector2(Vector2Value(x: 0, y: 0.25))
+            )
+            XCTAssertEqual(
+                try SchemaValidator.binding(for: event, in: document).id,
+                kind == .pinchChanged ? "pad-zoom" : "pad-drag"
+            )
+        }
+
+        let encoded = try WireCodec.encoder.encode(WireMessage.schemaSnapshot(document))
+        XCTAssertEqual(
+            try WireCodec.decoder.decode(WireMessage.self, from: encoded),
+            .schemaSnapshot(document)
+        )
+        let missingZoom = makeDocument(
+            controls: document.controls,
+            items: document.layout.items,
+            bindings: [bindings[0]]
+        )
+        XCTAssertThrowsError(try SchemaValidator.validate(missingZoom))
+    }
+
+    func testPinchAndRotationRequireSeparateMappings() throws {
+        let pinchBindings = PinchDirection.allCases.map { direction in
+            ControlBinding(
+                id: "pinch-\(direction.rawValue)",
+                controlID: "pinch",
+                event: direction.event,
+                action: .keyChord(KeyChordAction(key: .space, modifiers: []))
+            )
+        }
+        let rotationBindings = RotationDirection.allCases.map { direction in
+            ControlBinding(
+                id: "rotation-\(direction.rawValue)",
+                controlID: "rotation",
+                event: direction.event,
+                action: .keyChord(KeyChordAction(key: .enter, modifiers: []))
+            )
+        }
+        let controls: [ControlDefinition] = [
+            .pinchPad(id: "pinch", label: "Pinch"),
+            .rotationPad(id: "rotation", label: "Rotate"),
+        ]
+        let items = controls.enumerated().map { index, control in
+            ControllerLayoutItem(
+                controlID: control.id,
+                frame: LayoutRect(x: 0.05, y: 0.05 + Double(index) * 0.45, width: 0.9, height: 0.4)
+            )
+        }
+        let document = makeDocument(
+            controls: controls,
+            items: items,
+            bindings: pinchBindings + rotationBindings
+        )
+        try SchemaValidator.validate(document)
+        let encoded = try WireCodec.encoder.encode(WireMessage.schemaSnapshot(document))
+        XCTAssertEqual(
+            try WireCodec.decoder.decode(WireMessage.self, from: encoded),
+            .schemaSnapshot(document)
+        )
+
+        let incomplete = makeDocument(
+            controls: controls,
+            items: items,
+            bindings: pinchBindings + Array(rotationBindings.dropLast())
+        )
+        XCTAssertThrowsError(try SchemaValidator.validate(incomplete))
     }
 
     func testDuplicateControlIDsAreRejected() {
