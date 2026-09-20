@@ -12,6 +12,9 @@ struct ControllerRendererView: View {
                 ZStack(alignment: .topLeading) {
                     ForEach(document.layout.items) { item in
                         if let control = document.control(id: item.controlID) {
+                            let occupiesLayout = ControllerCapabilityCatalog.current.occupiesLayout(
+                                control.kind.capabilityID
+                            )
                             controlView(control)
                                 .frame(
                                     width: geometry.size.width * item.frame.width,
@@ -21,6 +24,8 @@ struct ControllerRendererView: View {
                                     x: geometry.size.width * (item.frame.x + item.frame.width / 2),
                                     y: geometry.size.height * (item.frame.y + item.frame.height / 2)
                                 )
+                                .zIndex(occupiesLayout ? 0 : 10)
+                                .allowsHitTesting(occupiesLayout || control.kind.capabilityID == .motion)
                         }
                     }
                 }
@@ -327,19 +332,20 @@ private struct TiltControlView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "iphone.gen3.radiowaves.left.and.right")
-                .font(.title)
+        VStack(spacing: 4) {
+            Image(systemName: "gyroscope")
+                .font(.title3.weight(.semibold))
             Text(label)
-                .font(.subheadline.weight(.semibold))
-            Text(motion.isAvailable ? "Tilt to move · tap to recenter" : "Motion unavailable")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.caption.weight(.semibold))
+            Text(motion.isAvailable ? "Tilt · tap recenter" : "Unavailable")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.7))
         }
-        .frame(maxWidth: .infinity)
-        .padding(12)
-        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 16))
-        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .foregroundStyle(.white)
+        .shadow(color: .black.opacity(0.55), radius: 2, y: 1)
+        .fixedSize()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
         .onTapGesture { motion.recenter() }
         .onAppear { if scenePhase == .active { motion.start(onChange: onChange) } }
         .onDisappear { motion.stop() }

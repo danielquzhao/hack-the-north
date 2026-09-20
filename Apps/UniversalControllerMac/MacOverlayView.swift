@@ -29,6 +29,7 @@ final class ControllerEditorState: ObservableObject {
     @Published var isIterativePrompt = false
     @Published var layoutDirty = false
     @Published var capturingShortcutControlID: String?
+    @Published var assetDropTargeted = false
 }
 
 struct MacOverlayView: View {
@@ -575,15 +576,26 @@ private extension MacOverlayView {
 
     func updateFrame(_ id: String, _ frame: LayoutRect) {
         guard let draft, canEditLayout else { return }
-        let obstacles = draft.layout.items
-            .filter { $0.controlID != id }
-            .map(\.frame)
-        let previous = draft.layout.items.first { $0.controlID == id }?.frame ?? frame
-        let resolved = LayoutEditing.resolvedOrPrevious(
-            frame,
-            previous: previous,
-            avoiding: obstacles
+        let movingOccupies = ControllerCapabilityCatalog.current.occupiesLayout(
+            draft.control(id: id)?.kind.capabilityID ?? .button
         )
+        let obstacles: [LayoutRect]
+        if movingOccupies {
+            obstacles = draft.layout.items.compactMap { item in
+                guard item.controlID != id,
+                      let control = draft.control(id: item.controlID),
+                      ControllerCapabilityCatalog.current.occupiesLayout(control.kind.capabilityID) else {
+                    return nil
+                }
+                return item.frame
+            }
+        } else {
+            obstacles = []
+        }
+        let previous = draft.layout.items.first { $0.controlID == id }?.frame ?? frame
+        let resolved = movingOccupies
+            ? LayoutEditing.resolvedOrPrevious(frame, previous: previous, avoiding: obstacles)
+            : frame.clamped()
         let items = draft.layout.items.map { item in
             item.controlID == id
                 ? ControllerLayoutItem(controlID: id, frame: resolved)
@@ -615,26 +627,156 @@ private extension MacOverlayView {
     }
 
     var assetLibraryPlaceholder: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "square.grid.2x2")
-                .font(.system(size: 30, weight: .medium))
-                .foregroundStyle(.secondary)
-            Text("Drag-and-drop controls")
-                .font(.headline)
-            Text("Buttons, sliders, joysticks, and more will appear here.")
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Drag a control onto the preview, or click to add.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+
+            if draft == nil {
+                Text("Generate a controller first, then add more pieces here.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 118), spacing: 10)],
+                spacing: 10
+            ) {
+                ForEach(ControllerCapabilityCatalog.current.controls, id: \.id) { asset in
+                    AssetLibraryTile(
+                        asset: asset,
+                        isEnabled: canEditLayout
+                    ) {
+                        addCatalogAsset(asset, dropPoint: nil, canvasSize: .zero)
+                    }
+                    .draggable(asset.id.rawValue) {
+                        AssetLibraryTile(asset: asset, isEnabled: true, onAdd: {})
+                            .frame(width: 120)
+                            .opacity(0.9)
+                    }
+                    .opacity(canEditLayout ? 1 : 0.45)
+                }
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: 180)
-        .background(.quaternary.opacity(0.22), in: RoundedRectangle(cornerRadius: 14))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(
-                    .secondary.opacity(0.35),
-                    style: StrokeStyle(lineWidth: 1, dash: [6, 5])
-                )
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    func addCatalogAsset(
+        _ asset: ControlCapabilityDescriptor,
+        dropPoint: CGPoint?,
+        canvasSize: CGSize
+    ) {
+        guard let draft, canEditLayout else { return }
+
+        let controlID = uniqueControlID(in: draft)
+        let control = asset.makeControl(id: controlID)
+        let bindings = asset.makeDefaultBindings(controlID: controlID)
+
+        var frame = asset.defaultFrame
+        if let dropPoint, canvasSize.width > 0, canvasSize.height > 0 {
+            frame = LayoutRect(
+                x: (dropPoint.x / canvasSize.width) - asset.defaultWidth / 2,
+                y: (dropPoint.y / canvasSize.height) - asset.defaultHeight / 2,
+                width: asset.defaultWidth,
+                height: asset.defaultHeight
+            ).clamped()
         }
+        frame = placeFrame(
+            frame,
+            avoiding: draft.layout.items.compactMap { item in
+                guard let control = draft.control(id: item.controlID),
+                      ControllerCapabilityCatalog.current.occupiesLayout(control.kind.capabilityID),
+                      asset.occupiesLayout else {
+                    return nil
+                }
+                return item.frame
+            }
+        )
+
+        let portrait = ControllerLayout(
+            items: draft.layouts.portrait.items + [
+                ControllerLayoutItem(controlID: controlID, frame: frame)
+            ]
+        )
+        let landscape = ControllerLayout(
+            items: draft.layouts.landscape.items + [
+                ControllerLayoutItem(controlID: controlID, frame: frame)
+            ]
+        )
+
+        self.draft = ControllerDocument(
+            schemaVersion: draft.schemaVersion,
+            id: draft.id,
+            revision: draft.revision,
+            name: draft.name,
+            target: draft.target,
+            preferredOrientation: draft.preferredOrientation,
+            layouts: ControllerLayouts(portrait: portrait, landscape: landscape),
+            controls: draft.controls + [control],
+            bindings: draft.bindings + bindings
+        )
+        editorState.layoutDirty = true
+        selectedControlID = controlID
+        selectedToolTab = .controls
+    }
+
+    func uniqueControlID(in draft: ControllerDocument) -> String {
+        var index = draft.controls.count + 1
+        var candidate = "control-\(index)"
+        while draft.control(id: candidate) != nil {
+            index += 1
+            candidate = "control-\(index)"
+        }
+        return candidate
+    }
+
+    func deleteControl(_ id: String) {
+        guard let draft, canEditLayout else { return }
+        let portrait = ControllerLayout(
+            items: draft.layouts.portrait.items.filter { $0.controlID != id }
+        )
+        let landscape = ControllerLayout(
+            items: draft.layouts.landscape.items.filter { $0.controlID != id }
+        )
+        self.draft = ControllerDocument(
+            schemaVersion: draft.schemaVersion,
+            id: draft.id,
+            revision: draft.revision,
+            name: draft.name,
+            target: draft.target,
+            preferredOrientation: draft.preferredOrientation,
+            layouts: ControllerLayouts(portrait: portrait, landscape: landscape),
+            controls: draft.controls.filter { $0.id != id },
+            bindings: draft.bindings.filter { $0.controlID != id }
+        )
+        editorState.layoutDirty = true
+        if selectedControlID == id {
+            selectedControlID = self.draft?.layout.items.first?.controlID
+        }
+    }
+
+    func placeFrame(_ preferred: LayoutRect, avoiding obstacles: [LayoutRect]) -> LayoutRect {
+        let candidates: [LayoutRect] = [preferred] + stride(from: 0.08, through: 0.72, by: 0.16).flatMap { y in
+            stride(from: 0.08, through: 0.72, by: 0.16).map { x in
+                LayoutRect(
+                    x: x,
+                    y: y,
+                    width: preferred.width,
+                    height: preferred.height
+                ).clamped()
+            }
+        }
+        for candidate in candidates {
+            let resolved = LayoutEditing.resolvedOrPrevious(
+                candidate,
+                previous: candidate,
+                avoiding: obstacles
+            )
+            if !obstacles.contains(where: { LayoutEditing.overlaps(resolved, $0) }) {
+                return resolved
+            }
+        }
+        return preferred.clamped()
     }
 
     var toolTabs: some View {
@@ -762,15 +904,31 @@ private extension MacOverlayView {
             ZStack(alignment: .topLeading) {
                 ForEach(draft.layout.items) { item in
                     if let control = draft.control(id: item.controlID) {
+                        let occupiesLayout = ControllerCapabilityCatalog.current.occupiesLayout(
+                            control.kind.capabilityID
+                        )
                         EditablePreviewControl(
                             control: control,
                             title: previewTitle(for: control),
                             subtitle: previewSubtitle(for: control),
+                            systemImage: ControllerCapabilityCatalog.current.control(
+                                id: control.kind.capabilityID
+                            )?.systemImage,
+                            occupiesLayout: occupiesLayout,
                             frame: item.frame,
                             canvasSize: size,
-                            obstacles: draft.layout.items
-                                .filter { $0.controlID != control.id }
-                                .map(\.frame),
+                            obstacles: occupiesLayout
+                                ? draft.layout.items.compactMap { other in
+                                    guard other.controlID != control.id,
+                                          let otherControl = draft.control(id: other.controlID),
+                                          ControllerCapabilityCatalog.current.occupiesLayout(
+                                              otherControl.kind.capabilityID
+                                          ) else {
+                                        return nil
+                                    }
+                                    return other.frame
+                                }
+                                : [],
                             isSelected: selectedControlID == control.id,
                             color: previewColor(for: control),
                             onSelect: { selectedControlID = control.id },
@@ -786,6 +944,26 @@ private extension MacOverlayView {
             .clipped()
             .contentShape(Rectangle())
             .onTapGesture { selectedControlID = nil }
+            .dropDestination(for: String.self) { items, location in
+                guard canEditLayout,
+                      let raw = items.first,
+                      let kind = ControlCapabilityID(rawValue: raw),
+                      let asset = ControllerCapabilityCatalog.current.control(id: kind) else {
+                    return false
+                }
+                addCatalogAsset(asset, dropPoint: location, canvasSize: size)
+                return true
+            } isTargeted: { targeted in
+                editorState.assetDropTargeted = targeted
+            }
+            .overlay {
+                if editorState.assetDropTargeted {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.9), lineWidth: 2)
+                        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+                        .allowsHitTesting(false)
+                }
+            }
         }
         .padding(14)
         .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 22))
@@ -822,6 +1000,9 @@ private extension MacOverlayView {
         if case .button(let configuration) = control.kind, configuration.face != .standard {
             return control.label
         }
+        if !ControllerCapabilityCatalog.current.occupiesLayout(control.kind.capabilityID) {
+            return control.label
+        }
         return nil
     }
 
@@ -831,8 +1012,23 @@ private extension MacOverlayView {
                 if let id = selectedControlID,
                    let control = draft.control(id: id),
                    let index = draft.layout.items.firstIndex(where: { $0.controlID == id }) {
-                    Text(control.kind.capabilityID.rawValue.capitalized)
-                        .font(.headline)
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(control.kind.capabilityID.rawValue.capitalized)
+                            .font(.headline)
+                        Spacer()
+                        Button {
+                            deleteControl(id)
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.red.opacity(0.9))
+                                .frame(width: 28, height: 28)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!canEditLayout)
+                        .help("Remove this control")
+                    }
 
                     TextField("Label", text: Binding(
                         get: { self.draft?.control(id: id)?.label ?? "" },
@@ -1353,6 +1549,8 @@ private struct EditablePreviewControl: View {
     let control: ControlDefinition
     let title: String
     let subtitle: String?
+    let systemImage: String?
+    let occupiesLayout: Bool
     let frame: LayoutRect
     let canvasSize: CGSize
     let obstacles: [LayoutRect]
@@ -1375,37 +1573,60 @@ private struct EditablePreviewControl: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(color.opacity(isSelected ? 0.95 : 0.82))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(
-                            .white.opacity(isSelected ? 0.95 : 0.25),
-                            lineWidth: isSelected ? 2 : 1
-                        )
-                }
-                .shadow(color: .black.opacity(0.25), radius: isSelected ? 8 : 3, y: 2)
+            if occupiesLayout {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(color.opacity(isSelected ? 0.95 : 0.82))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(
+                                .white.opacity(isSelected ? 0.95 : 0.25),
+                                lineWidth: isSelected ? 2 : 1
+                            )
+                    }
+                    .shadow(color: .black.opacity(0.25), radius: isSelected ? 8 : 3, y: 2)
 
-            VStack(spacing: 2) {
-                Text(title)
-                    .font(subtitle == nil
-                          ? .caption.weight(.semibold)
-                          : .title3.weight(.heavy))
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.caption2.weight(.medium))
-                        .opacity(0.85)
+                VStack(spacing: 2) {
+                    Text(title)
+                        .font(subtitle == nil
+                              ? .caption.weight(.semibold)
+                              : .title3.weight(.heavy))
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.caption2.weight(.medium))
+                            .opacity(0.85)
+                            .lineLimit(1)
+                    }
+                }
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+                .padding(8)
+                .minimumScaleFactor(0.55)
+                .lineLimit(2)
+                .allowsHitTesting(false)
+            } else {
+                VStack(spacing: 4) {
+                    if let systemImage {
+                        Image(systemName: systemImage)
+                            .font(.system(size: 18, weight: .semibold))
+                    }
+                    Text(subtitle ?? title)
+                        .font(.caption2.weight(.semibold))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .overlay {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(.white.opacity(0.85), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    }
+                }
+                .shadow(color: .black.opacity(0.55), radius: 2, y: 1)
             }
-            .foregroundStyle(.white)
-            .multilineTextAlignment(.center)
-            .padding(8)
-            .minimumScaleFactor(0.55)
-            .lineLimit(2)
-            .allowsHitTesting(false)
 
-            if isSelected {
+            if isSelected && occupiesLayout {
                 ForEach(ResizeHandle.allCases, id: \.self) { handle in
                     handleView(handle)
                         .allowsHitTesting(false)
@@ -1416,7 +1637,7 @@ private struct EditablePreviewControl: View {
         .contentShape(Rectangle())
         // `position` keeps hit-testing aligned with the drawn control (unlike `offset`).
         .position(x: pixelFrame.midX, y: pixelFrame.midY)
-        .zIndex(isSelected ? 10 : 0)
+        .zIndex(isSelected ? 20 : (occupiesLayout ? 0 : 15))
         .gesture(canvasDragGesture)
         .onTapGesture(perform: onSelect)
     }
@@ -1623,5 +1844,40 @@ private extension Color {
             Int((green * 255).rounded()),
             Int((blue * 255).rounded())
         )
+    }
+}
+
+private struct AssetLibraryTile: View {
+    let asset: ControlCapabilityDescriptor
+    let isEnabled: Bool
+    let onAdd: () -> Void
+
+    var body: some View {
+        Button(action: onAdd) {
+            VStack(alignment: .leading, spacing: 8) {
+                Image(systemName: asset.systemImage)
+                    .font(.system(size: 22, weight: .semibold))
+                    .frame(width: 36, height: 36)
+                    .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 10))
+                Text(asset.displayName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(asset.summary)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, minHeight: 110, alignment: .topLeading)
+            .background(.quaternary.opacity(0.22), in: RoundedRectangle(cornerRadius: 12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(.secondary.opacity(0.25))
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .help(asset.summary)
     }
 }
