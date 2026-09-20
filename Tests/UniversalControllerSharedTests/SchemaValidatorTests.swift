@@ -22,14 +22,6 @@ final class SchemaValidatorTests: XCTestCase {
                 id: .trackpad,
                 outputKind: .vector2,
                 events: [.began, .changed, .ended, .pinchChanged]
-            ), ControlCapabilityDescriptor(
-                id: .pinchPad,
-                outputKind: .none,
-                events: PinchDirection.allCases.map(\.event)
-            ), ControlCapabilityDescriptor(
-                id: .rotationPad,
-                outputKind: .none,
-                events: RotationDirection.allCases.map(\.event)
             )]
         )
         XCTAssertEqual(
@@ -126,53 +118,6 @@ final class SchemaValidatorTests: XCTestCase {
             bindings: [bindings[0]]
         )
         XCTAssertThrowsError(try SchemaValidator.validate(missingZoom))
-    }
-
-    func testPinchAndRotationRequireSeparateMappings() throws {
-        let pinchBindings = PinchDirection.allCases.map { direction in
-            ControlBinding(
-                id: "pinch-\(direction.rawValue)",
-                controlID: "pinch",
-                event: direction.event,
-                action: .keyChord(KeyChordAction(key: .space, modifiers: []))
-            )
-        }
-        let rotationBindings = RotationDirection.allCases.map { direction in
-            ControlBinding(
-                id: "rotation-\(direction.rawValue)",
-                controlID: "rotation",
-                event: direction.event,
-                action: .keyChord(KeyChordAction(key: .enter, modifiers: []))
-            )
-        }
-        let controls: [ControlDefinition] = [
-            .pinchPad(id: "pinch", label: "Pinch"),
-            .rotationPad(id: "rotation", label: "Rotate"),
-        ]
-        let items = controls.enumerated().map { index, control in
-            ControllerLayoutItem(
-                controlID: control.id,
-                frame: LayoutRect(x: 0.05, y: 0.05 + Double(index) * 0.45, width: 0.9, height: 0.4)
-            )
-        }
-        let document = makeDocument(
-            controls: controls,
-            items: items,
-            bindings: pinchBindings + rotationBindings
-        )
-        try SchemaValidator.validate(document)
-        let encoded = try WireCodec.encoder.encode(WireMessage.schemaSnapshot(document))
-        XCTAssertEqual(
-            try WireCodec.decoder.decode(WireMessage.self, from: encoded),
-            .schemaSnapshot(document)
-        )
-
-        let incomplete = makeDocument(
-            controls: controls,
-            items: items,
-            bindings: pinchBindings + Array(rotationBindings.dropLast())
-        )
-        XCTAssertThrowsError(try SchemaValidator.validate(incomplete))
     }
 
     func testDuplicateControlIDsAreRejected() {

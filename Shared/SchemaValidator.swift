@@ -41,16 +41,6 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
                 outputKind: .vector2,
                 events: [.began, .changed, .ended, .pinchChanged]
             ),
-            ControlCapabilityDescriptor(
-                id: .pinchPad,
-                outputKind: .none,
-                events: PinchDirection.allCases.map(\.event)
-            ),
-            ControlCapabilityDescriptor(
-                id: .rotationPad,
-                outputKind: .none,
-                events: RotationDirection.allCases.map(\.event)
-            ),
         ],
         actions: [
             ActionCapabilityDescriptor(
@@ -201,22 +191,6 @@ enum SchemaValidator {
         }
 
         for control in document.controls {
-            let requiredEvents: [ControlEventKind]
-            switch control.kind {
-            case .pinchPad:
-                requiredEvents = PinchDirection.allCases.map(\.event)
-            case .rotationPad:
-                requiredEvents = RotationDirection.allCases.map(\.event)
-            case .trackpad:
-                requiredEvents = [.changed, .pinchChanged]
-            default:
-                continue
-            }
-            for event in requiredEvents {
-                guard document.binding(controlID: control.id, event: event) != nil else {
-                    throw error("Gesture control '\(control.id)' needs a \(event.rawValue) mapping.")
-                }
-            }
             if case .trackpad = control.kind {
                 guard case .mouseDrag = document.binding(controlID: control.id, event: .changed)?.action,
                       case .scroll = document.binding(controlID: control.id, event: .pinchChanged)?.action else {

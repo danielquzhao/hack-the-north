@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 enum PairingProtocol {
-    static let version = 3
+    static let version = 4
     static let serviceType = "_universalctrl._tcp"
     static let maximumFrameSize = 256 * 1024
     static let sessionLifetime: TimeInterval = 5 * 60
