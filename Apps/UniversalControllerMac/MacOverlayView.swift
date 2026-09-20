@@ -90,6 +90,7 @@ struct MacOverlayView: View {
     @State private var apiKeyEntry = ""
     @State private var apiKeyError: String?
     @State private var showingSettings = true
+    @State private var showingWorkspace = true
     @State private var selectedToolTab: EditorToolTab = .controls
 
     private var draft: ControllerDocument? {
@@ -109,13 +110,27 @@ struct MacOverlayView: View {
     }
 
     private var isWorkspaceExpanded: Bool {
-        draft != nil
+        draft != nil && showingWorkspace
     }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             HStack(alignment: .top, spacing: 20) {
                 VStack(alignment: .leading, spacing: 18) {
+                    if isWorkspaceExpanded {
+                        Button {
+                            withAnimation(.smooth(duration: 0.3)) {
+                                showingWorkspace = false
+                            }
+                        } label: {
+                            Label("Back to main page", systemImage: "chevron.left")
+                                .font(.subheadline.weight(.medium))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Back to main page")
+                    }
+
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Universal Controller")
                             .font(.title2.weight(.semibold))
@@ -182,6 +197,17 @@ struct MacOverlayView: View {
                                         .transition(.move(edge: .top).combined(with: .opacity))
                                 }
 
+                                if draft != nil {
+                                    Button {
+                                        withAnimation(.smooth(duration: 0.3)) {
+                                            showingWorkspace = true
+                                        }
+                                    } label: {
+                                        Label("Continue editing controller", systemImage: "slider.horizontal.3")
+                                    }
+                                    .buttonStyle(SolidGreyButtonStyle())
+                                }
+
                                 generationSection
 
                                 if pairingHost.state != .idle {
@@ -231,7 +257,7 @@ struct MacOverlayView: View {
         }
         .onChange(of: isWorkspaceExpanded) { _, expanded in
             withAnimation(.smooth(duration: 0.55)) {
-                showingSettings = false
+                showingSettings = !expanded
                 selectedToolTab = .controls
             }
             onWorkspaceExpansionChanged(expanded)
@@ -620,6 +646,7 @@ private extension MacOverlayView {
 
     func submitGeneration() {
         guard canGenerate else { return }
+        showingWorkspace = true
         onGenerate(editorState.prompt)
     }
 
