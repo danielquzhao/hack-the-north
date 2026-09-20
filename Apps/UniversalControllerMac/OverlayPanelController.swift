@@ -93,9 +93,10 @@ final class OverlayPanelController {
     }
 
     private func makePanel(context: AppContext?, errorMessage: String?) -> OverlayPanel {
-        let initialWidth: CGFloat = editorState.draft == nil || editorState.isOnMainPage ? 430 : 1100
+        let initialSize = editorState.draft == nil || editorState.isOnMainPage
+            ? OverlayPanelLayout.mainSize : OverlayPanelLayout.workspaceSize
         let panel = OverlayPanel(
-            contentRect: NSRect(x: 0, y: 0, width: initialWidth, height: 760),
+            contentRect: NSRect(origin: .zero, size: initialSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -157,23 +158,24 @@ final class OverlayPanelController {
 
     private func setWorkspaceExpanded(_ expanded: Bool) {
         guard let panel else { return }
-        let targetWidth: CGFloat = expanded ? 1100 : 430
-        guard abs(panel.frame.width - targetWidth) > 1 else { return }
+        let targetSize = expanded ? OverlayPanelLayout.workspaceSize : OverlayPanelLayout.mainSize
+        guard abs(panel.frame.width - targetSize.width) > 1 ||
+              abs(panel.frame.height - targetSize.height) > 1 else { return }
 
         let currentFrame = panel.frame
         let screen = NSScreen.screens.first {
             $0.frame.intersects(currentFrame)
         } ?? NSScreen.main
         var targetFrame = NSRect(
-            x: currentFrame.midX - targetWidth / 2,
-            y: currentFrame.minY,
-            width: targetWidth,
-            height: 760
+            x: currentFrame.midX - targetSize.width / 2,
+            y: currentFrame.midY - targetSize.height / 2,
+            width: targetSize.width,
+            height: targetSize.height
         )
         if let visibleFrame = screen?.visibleFrame {
             targetFrame.origin.x = min(
                 max(targetFrame.minX, visibleFrame.minX),
-                max(visibleFrame.minX, visibleFrame.maxX - targetWidth)
+                max(visibleFrame.minX, visibleFrame.maxX - targetSize.width)
             )
             targetFrame.origin.y = min(
                 max(targetFrame.minY, visibleFrame.minY),
