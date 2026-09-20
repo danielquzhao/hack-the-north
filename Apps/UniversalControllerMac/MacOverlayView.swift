@@ -38,6 +38,7 @@ final class ControllerEditorState: ObservableObject {
     @Published var draftWasGenerated = false
     @Published var isIterativePrompt = false
     @Published var layoutDirty = false
+    @Published var capturingShortcutControlID: String?
 }
 
 struct MacOverlayView: View {
@@ -80,7 +81,13 @@ struct MacOverlayView: View {
 
     private var selectedControlID: String? {
         get { editorState.selectedControlID }
-        nonmutating set { editorState.selectedControlID = newValue }
+        nonmutating set {
+            if editorState.capturingShortcutControlID != nil,
+               editorState.capturingShortcutControlID != newValue {
+                editorState.capturingShortcutControlID = nil
+            }
+            editorState.selectedControlID = newValue
+        }
     }
 
     private var isWorkspaceExpanded: Bool {
@@ -792,6 +799,8 @@ private extension MacOverlayView {
                     if let control = draft.control(id: item.controlID) {
                         EditablePreviewControl(
                             control: control,
+                            title: previewTitle(for: control),
+                            subtitle: previewSubtitle(for: control),
                             frame: item.frame,
                             canvasSize: size,
                             obstacles: draft.layout.items
@@ -820,21 +829,34 @@ private extension MacOverlayView {
     func previewColor(for control: ControlDefinition) -> Color {
         switch control.kind {
         case .button(let configuration):
-            switch configuration.face {
-            case .a: .green
-            case .b: .red
-            case .x: .blue
-            case .y: .orange
-            case .standard:
-                switch configuration.variant {
-                case .primary: .indigo
-                case .secondary: .gray
-                case .destructive: .red
-                }
-            }
+            Color(hex: configuration.tintHex) ?? .indigo
         case .joystick: .blue
         case .motion: .teal
         }
+    }
+
+    static func defaultTintHex(for face: ButtonFace, fallingBack: String) -> String {
+        switch face {
+        case .standard: fallingBack
+        case .a: "34C759"
+        case .b: "FF3B30"
+        case .x: "007AFF"
+        case .y: "FF9500"
+        }
+    }
+
+    func previewTitle(for control: ControlDefinition) -> String {
+        if case .button(let configuration) = control.kind, configuration.face != .standard {
+            return configuration.face.rawValue.uppercased()
+        }
+        return control.label
+    }
+
+    func previewSubtitle(for control: ControlDefinition) -> String? {
+        if case .button(let configuration) = control.kind, configuration.face != .standard {
+            return control.label
+        }
+        return nil
     }
 
     func inspector(_ draft: ControllerDocument) -> some View {
@@ -871,7 +893,8 @@ private extension MacOverlayView {
                                         ButtonControlConfiguration(
                                             variant: configuration.variant,
                                             hapticsEnabled: configuration.hapticsEnabled,
-                                            face: face
+                                            face: face,
+                                            tintHex: Self.defaultTintHex(for: face, fallingBack: configuration.tintHex)
                                         )
                                     ))
                                 }
@@ -881,25 +904,37 @@ private extension MacOverlayView {
                                 Text(face == .standard ? "Standard" : face.rawValue.uppercased()).tag(face)
                             }
                         }
-                        if configuration.face == .standard {
-                            Picker("Style", selection: Binding(
-                                get: { currentButtonConfiguration(id)?.variant ?? .primary },
-                                set: { variant in
-                                    updateControl(id) { control in
-                                        ControlDefinition(id: control.id, label: control.label, kind: .button(
-                                            ButtonControlConfiguration(
-                                                variant: variant,
-                                                hapticsEnabled: configuration.hapticsEnabled,
-                                                face: configuration.face
+                        HStack {
+                            Text("Color")
+                            Spacer()
+                            ColorPicker(
+                                "Color",
+                                selection: Binding(
+                                    get: {
+                                        Color(hex: currentButtonConfiguration(id)?.tintHex
+                                              ?? configuration.tintHex) ?? .indigo
+                                    },
+                                    set: { color in
+                                        let hex = color.hexRGB
+                                            ?? configuration.tintHex
+                                        updateControl(id) { control in
+                                            guard case .button(let current) = control.kind else { return control }
+                                            return ControlDefinition(
+                                                id: control.id,
+                                                label: control.label,
+                                                kind: .button(ButtonControlConfiguration(
+                                                    variant: current.variant,
+                                                    hapticsEnabled: current.hapticsEnabled,
+                                                    face: current.face,
+                                                    tintHex: hex
+                                                ))
                                             )
-                                        ))
+                                        }
                                     }
-                                }
-                            )) {
-                                Text("Primary").tag(ButtonVariant.primary)
-                                Text("Secondary").tag(ButtonVariant.secondary)
-                                Text("Destructive").tag(ButtonVariant.destructive)
-                            }
+                                ),
+                                supportsOpacity: false
+                            )
+                            .labelsHidden()
                         }
                     }
 
@@ -924,25 +959,23 @@ private extension MacOverlayView {
     func actionInspector(_ id: String) -> some View {
         if let action = draft?.bindings.first(where: { $0.controlID == id })?.action {
             switch action {
-            case .keyChord:
-                Picker("Key", selection: Binding(
-                    get: { currentKey(id) },
-                    set: { key in setAction(id, .keyChord(KeyChordAction(key: key, modifiers: currentModifiers(id)))) }
-                )) {
-                    ForEach(SemanticKey.allCases, id: \.self) { key in
-                        Text(key.rawValue).tag(key)
-                    }
-                }
-                ForEach(KeyModifier.allCases, id: \.self) { modifier in
-                    Toggle(modifier.rawValue.capitalized, isOn: Binding(
-                        get: { currentModifiers(id).contains(modifier) },
-                        set: { enabled in
-                            var modifiers = currentModifiers(id).filter { $0 != modifier }
-                            if enabled { modifiers.append(modifier) }
-                            setAction(id, .keyChord(KeyChordAction(key: currentKey(id), modifiers: modifiers)))
+            case .keyChord(let action):
+                ShortcutRecorderField(
+                    chord: action,
+                    isRecording: editorState.capturingShortcutControlID == id,
+                    onStartRecording: {
+                        editorState.capturingShortcutControlID = id
+                    },
+                    onCancelRecording: {
+                        if editorState.capturingShortcutControlID == id {
+                            editorState.capturingShortcutControlID = nil
                         }
-                    ))
-                }
+                    },
+                    onCapture: { chord in
+                        setAction(id, .keyChord(chord))
+                        editorState.capturingShortcutControlID = nil
+                    }
+                )
             case .mouseMove:
                 Text("Move the Mac pointer")
                     .font(.subheadline)
@@ -980,18 +1013,6 @@ private extension MacOverlayView {
                 ? ControlBinding(id: binding.id, controlID: id, event: binding.event, action: action)
                 : binding
         })
-    }
-
-    func currentKey(_ id: String) -> SemanticKey {
-        guard let binding = draft?.bindings.first(where: { $0.controlID == id }),
-              case .keyChord(let action) = binding.action else { return .rightArrow }
-        return action.key
-    }
-
-    func currentModifiers(_ id: String) -> [KeyModifier] {
-        guard let binding = draft?.bindings.first(where: { $0.controlID == id }),
-              case .keyChord(let action) = binding.action else { return [] }
-        return action.modifiers
     }
 
     func currentMouseMove(_ id: String) -> MouseMoveAction {
@@ -1252,6 +1273,8 @@ private enum LayoutEditing {
 
 private struct EditablePreviewControl: View {
     let control: ControlDefinition
+    let title: String
+    let subtitle: String?
     let frame: LayoutRect
     let canvasSize: CGSize
     let obstacles: [LayoutRect]
@@ -1285,14 +1308,24 @@ private struct EditablePreviewControl: View {
                 }
                 .shadow(color: .black.opacity(0.25), radius: isSelected ? 8 : 3, y: 2)
 
-            Text(control.label)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-                .padding(10)
-                .minimumScaleFactor(0.6)
-                .lineLimit(2)
-                .allowsHitTesting(false)
+            VStack(spacing: 2) {
+                Text(title)
+                    .font(subtitle == nil
+                          ? .caption.weight(.semibold)
+                          : .title3.weight(.heavy))
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption2.weight(.medium))
+                        .opacity(0.85)
+                        .lineLimit(1)
+                }
+            }
+            .foregroundStyle(.white)
+            .multilineTextAlignment(.center)
+            .padding(8)
+            .minimumScaleFactor(0.55)
+            .lineLimit(2)
+            .allowsHitTesting(false)
 
             if isSelected {
                 ForEach(ResizeHandle.allCases, id: \.self) { handle in
@@ -1394,5 +1427,123 @@ private struct EditablePreviewControl: View {
                 liveFrame = nil
                 activeHandle = nil
             }
+    }
+}
+
+private struct ShortcutRecorderField: View {
+    let chord: KeyChordAction
+    let isRecording: Bool
+    let onStartRecording: () -> Void
+    let onCancelRecording: () -> Void
+    let onCapture: (KeyChordAction) -> Void
+
+    @State private var monitor: Any?
+
+    var body: some View {
+        Button {
+            if isRecording {
+                stopMonitoring()
+                onCancelRecording()
+            } else {
+                onStartRecording()
+            }
+        } label: {
+            HStack {
+                Text(isRecording ? "Press shortcut…" : chord.displayString)
+                    .font(.body.monospaced())
+                    .foregroundStyle(isRecording ? .secondary : .primary)
+                Spacer()
+                Text(isRecording ? "Esc to cancel" : "Click to record")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .onChange(of: isRecording) { _, recording in
+            if recording {
+                startMonitoring()
+            } else {
+                stopMonitoring()
+            }
+        }
+        .onDisappear {
+            stopMonitoring()
+            if isRecording {
+                onCancelRecording()
+            }
+        }
+    }
+
+    private func startMonitoring() {
+        stopMonitoring()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // Pure modifier presses wait for a real key.
+            if Self.isModifierKeyCode(event.keyCode) {
+                return nil
+            }
+            // Esc alone cancels recording.
+            if event.keyCode == 53 && event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty {
+                stopMonitoring()
+                onCancelRecording()
+                return nil
+            }
+            guard let key = SemanticKey.from(keyCode: event.keyCode) else {
+                return nil
+            }
+            var modifiers: [KeyModifier] = []
+            let flags = event.modifierFlags
+            if flags.contains(.command) { modifiers.append(.command) }
+            if flags.contains(.shift) { modifiers.append(.shift) }
+            if flags.contains(.option) { modifiers.append(.option) }
+            if flags.contains(.control) { modifiers.append(.control) }
+            stopMonitoring()
+            onCapture(KeyChordAction(key: key, modifiers: modifiers))
+            return nil
+        }
+    }
+
+    private func stopMonitoring() {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+    }
+
+    private static func isModifierKeyCode(_ keyCode: UInt16) -> Bool {
+        // Shift, Control, Option, Command (left/right)
+        [54, 55, 56, 57, 58, 59, 60, 61, 62, 63].contains(keyCode)
+    }
+}
+
+private extension Color {
+    init?(hex: String) {
+        var cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.hasPrefix("#") { cleaned.removeFirst() }
+        guard cleaned.count == 6, let value = UInt32(cleaned, radix: 16) else { return nil }
+        let red = Double((value >> 16) & 0xFF) / 255
+        let green = Double((value >> 8) & 0xFF) / 255
+        let blue = Double(value & 0xFF) / 255
+        self = Color(.sRGB, red: red, green: green, blue: blue, opacity: 1)
+    }
+
+    var hexRGB: String? {
+        let nsColor = NSColor(self)
+        guard let rgb = nsColor.usingColorSpace(.deviceRGB) ?? nsColor.usingColorSpace(.sRGB) else {
+            return nil
+        }
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        rgb.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return String(
+            format: "%02X%02X%02X",
+            Int((red * 255).rounded()),
+            Int((green * 255).rounded()),
+            Int((blue * 255).rounded())
+        )
     }
 }

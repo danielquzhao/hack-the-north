@@ -88,14 +88,7 @@ private struct ButtonControlView: View {
     var body: some View {
         Group {
             if configuration.face == .standard {
-                switch configuration.variant {
-                case .primary:
-                    button.buttonStyle(.borderedProminent)
-                case .secondary:
-                    button.buttonStyle(.bordered)
-                case .destructive:
-                    button.buttonStyle(.borderedProminent).tint(.red)
-                }
+                standardButton
             } else {
                 gamepadButton
             }
@@ -111,13 +104,19 @@ private struct ButtonControlView: View {
         }
     }
 
-    private var button: some View {
+    private var standardButton: some View {
         Button {} label: {
             Text(control.label)
                 .font(.title2.bold())
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.vertical, 16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(tintColor)
+                )
         }
+        .buttonStyle(.plain)
     }
 
     private var gamepadButton: some View {
@@ -149,14 +148,12 @@ private struct ButtonControlView: View {
         .accessibilityLabel("\(configuration.face.rawValue.uppercased()), \(control.label)")
     }
 
+    private var tintColor: Color {
+        Color(hex: configuration.tintHex) ?? .indigo
+    }
+
     private var faceColor: Color {
-        switch configuration.face {
-        case .standard: .indigo
-        case .a: .green
-        case .b: .red
-        case .x: .blue
-        case .y: .orange
-        }
+        tintColor
     }
 
     private func press() {
@@ -314,5 +311,17 @@ private final class MotionInputSource: ObservableObject {
             y: min(1, max(-1, (raw.y - neutral.y) / 0.6))
         )
         onChange?(value)
+    }
+}
+
+private extension Color {
+    init?(hex: String) {
+        var cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.hasPrefix("#") { cleaned.removeFirst() }
+        guard cleaned.count == 6, let value = UInt32(cleaned, radix: 16) else { return nil }
+        let red = Double((value >> 16) & 0xFF) / 255
+        let green = Double((value >> 8) & 0xFF) / 255
+        let blue = Double(value & 0xFF) / 255
+        self = Color(.sRGB, red: red, green: green, blue: blue, opacity: 1)
     }
 }

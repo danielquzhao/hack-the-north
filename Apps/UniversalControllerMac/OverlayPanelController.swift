@@ -65,6 +65,9 @@ final class OverlayPanelController {
         }
         localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
+            if editorState.capturingShortcutControlID != nil {
+                return event
+            }
             if event.keyCode == 53 {
                 self.close()
                 return nil

@@ -183,6 +183,38 @@ struct ButtonControlConfiguration: Equatable, Sendable {
     let variant: ButtonVariant
     let hapticsEnabled: Bool
     let face: ButtonFace
+    /// RGB hex without `#`, e.g. `5856D6`. Used for standard (non-face) buttons.
+    let tintHex: String
+
+    static func defaultTintHex(for variant: ButtonVariant) -> String {
+        switch variant {
+        case .primary: "5856D6"
+        case .secondary: "8E8E93"
+        case .destructive: "FF3B30"
+        }
+    }
+
+    static func defaultTintHex(for face: ButtonFace, variant: ButtonVariant = .primary) -> String {
+        switch face {
+        case .standard: defaultTintHex(for: variant)
+        case .a: "34C759"
+        case .b: "FF3B30"
+        case .x: "007AFF"
+        case .y: "FF9500"
+        }
+    }
+
+    init(
+        variant: ButtonVariant = .primary,
+        hapticsEnabled: Bool = true,
+        face: ButtonFace = .standard,
+        tintHex: String? = nil
+    ) {
+        self.variant = variant
+        self.hapticsEnabled = hapticsEnabled
+        self.face = face
+        self.tintHex = tintHex ?? Self.defaultTintHex(for: face, variant: variant)
+    }
 }
 
 extension ButtonControlConfiguration: Codable {
@@ -190,13 +222,17 @@ extension ButtonControlConfiguration: Codable {
         case variant
         case hapticsEnabled
         case face
+        case tintHex
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        variant = try container.decode(ButtonVariant.self, forKey: .variant)
+        let variant = try container.decode(ButtonVariant.self, forKey: .variant)
+        self.variant = variant
         hapticsEnabled = try container.decode(Bool.self, forKey: .hapticsEnabled)
         face = try container.decodeIfPresent(ButtonFace.self, forKey: .face) ?? .standard
+        tintHex = try container.decodeIfPresent(String.self, forKey: .tintHex)
+            ?? Self.defaultTintHex(for: face, variant: variant)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -204,6 +240,7 @@ extension ButtonControlConfiguration: Codable {
         try container.encode(variant, forKey: .variant)
         try container.encode(hapticsEnabled, forKey: .hapticsEnabled)
         try container.encode(face, forKey: .face)
+        try container.encode(tintHex, forKey: .tintHex)
     }
 }
 
@@ -264,7 +301,8 @@ struct ControlDefinition: Equatable, Sendable, Identifiable {
         label: String,
         variant: ButtonVariant = .primary,
         hapticsEnabled: Bool = true,
-        face: ButtonFace = .standard
+        face: ButtonFace = .standard,
+        tintHex: String? = nil
     ) -> ControlDefinition {
         ControlDefinition(
             id: id,
@@ -272,7 +310,8 @@ struct ControlDefinition: Equatable, Sendable, Identifiable {
             kind: .button(ButtonControlConfiguration(
                 variant: variant,
                 hapticsEnabled: hapticsEnabled,
-                face: face
+                face: face,
+                tintHex: tintHex
             ))
         )
     }
@@ -448,6 +487,146 @@ enum SemanticKey: String, Codable, CaseIterable, Hashable, Sendable {
     case letterB
     case escape
     case enter
+    case tab
+    case delete
+    case letterA, letterC, letterD, letterE, letterF, letterG, letterH, letterI
+    case letterJ, letterK, letterL, letterM, letterN, letterO, letterP, letterQ
+    case letterR, letterS, letterT, letterU, letterV, letterW, letterX, letterY, letterZ
+    case digit0, digit1, digit2, digit3, digit4, digit5, digit6, digit7, digit8, digit9
+    case period
+    case comma
+    case slash
+    case semicolon
+    case quote
+    case leftBracket
+    case rightBracket
+    case backslash
+    case grave
+    case minus
+    case equal
+
+    var displayName: String {
+        switch self {
+        case .leftArrow: "←"
+        case .rightArrow: "→"
+        case .upArrow: "↑"
+        case .downArrow: "↓"
+        case .space: "Space"
+        case .escape: "Esc"
+        case .enter: "Return"
+        case .tab: "Tab"
+        case .delete: "Delete"
+        case .letterA: "A"
+        case .letterB: "B"
+        case .letterC: "C"
+        case .letterD: "D"
+        case .letterE: "E"
+        case .letterF: "F"
+        case .letterG: "G"
+        case .letterH: "H"
+        case .letterI: "I"
+        case .letterJ: "J"
+        case .letterK: "K"
+        case .letterL: "L"
+        case .letterM: "M"
+        case .letterN: "N"
+        case .letterO: "O"
+        case .letterP: "P"
+        case .letterQ: "Q"
+        case .letterR: "R"
+        case .letterS: "S"
+        case .letterT: "T"
+        case .letterU: "U"
+        case .letterV: "V"
+        case .letterW: "W"
+        case .letterX: "X"
+        case .letterY: "Y"
+        case .letterZ: "Z"
+        case .digit0: "0"
+        case .digit1: "1"
+        case .digit2: "2"
+        case .digit3: "3"
+        case .digit4: "4"
+        case .digit5: "5"
+        case .digit6: "6"
+        case .digit7: "7"
+        case .digit8: "8"
+        case .digit9: "9"
+        case .period: "."
+        case .comma: ","
+        case .slash: "/"
+        case .semicolon: ";"
+        case .quote: "'"
+        case .leftBracket: "["
+        case .rightBracket: "]"
+        case .backslash: "\\"
+        case .grave: "`"
+        case .minus: "-"
+        case .equal: "="
+        }
+    }
+
+    static func from(keyCode: UInt16) -> SemanticKey? {
+        switch keyCode {
+        case 0: .letterA
+        case 1: .letterS
+        case 2: .letterD
+        case 3: .letterF
+        case 4: .letterH
+        case 5: .letterG
+        case 6: .letterZ
+        case 7: .letterX
+        case 8: .letterC
+        case 9: .letterV
+        case 11: .letterB
+        case 12: .letterQ
+        case 13: .letterW
+        case 14: .letterE
+        case 15: .letterR
+        case 16: .letterY
+        case 17: .letterT
+        case 18: .digit1
+        case 19: .digit2
+        case 20: .digit3
+        case 21: .digit4
+        case 22: .digit6
+        case 23: .digit5
+        case 24: .equal
+        case 25: .digit9
+        case 26: .digit7
+        case 27: .minus
+        case 28: .digit8
+        case 29: .digit0
+        case 30: .rightBracket
+        case 31: .letterO
+        case 32: .letterU
+        case 33: .leftBracket
+        case 34: .letterI
+        case 35: .letterP
+        case 36: .enter
+        case 37: .letterL
+        case 38: .letterJ
+        case 39: .quote
+        case 40: .letterK
+        case 41: .semicolon
+        case 42: .backslash
+        case 43: .comma
+        case 44: .slash
+        case 45: .letterN
+        case 46: .letterM
+        case 47: .period
+        case 48: .tab
+        case 49: .space
+        case 50: .grave
+        case 51: .delete
+        case 53: .escape
+        case 123: .leftArrow
+        case 124: .rightArrow
+        case 125: .downArrow
+        case 126: .upArrow
+        default: nil
+        }
+    }
 }
 
 enum KeyModifier: String, Codable, CaseIterable, Equatable, Hashable, Sendable {
@@ -455,11 +634,25 @@ enum KeyModifier: String, Codable, CaseIterable, Equatable, Hashable, Sendable {
     case shift
     case option
     case control
+
+    var displayName: String {
+        switch self {
+        case .command: "cmd"
+        case .shift: "shift"
+        case .option: "option"
+        case .control: "ctrl"
+        }
+    }
 }
 
 struct KeyChordAction: Codable, Hashable, Sendable {
     let key: SemanticKey
     let modifiers: [KeyModifier]
+
+    var displayString: String {
+        let parts = modifiers.map(\.displayName) + [key.displayName]
+        return parts.joined(separator: " + ")
+    }
 }
 
 struct MouseMoveAction: Codable, Equatable, Sendable {
