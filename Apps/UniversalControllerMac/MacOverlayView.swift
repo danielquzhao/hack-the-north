@@ -8,6 +8,22 @@ enum DemoControllerStyle: String, CaseIterable, Identifiable {
     var id: Self { self }
 }
 
+private enum EditorToolTab: String, CaseIterable, Identifiable {
+    case controls = "Controls"
+    case assets = "Assets"
+
+    var id: Self { self }
+
+    var systemImage: String {
+        switch self {
+        case .controls:
+            "slider.horizontal.3"
+        case .assets:
+            "square.grid.2x2"
+        }
+    }
+}
+
 @MainActor
 final class ControllerEditorState: ObservableObject {
     @Published var demoStyle: DemoControllerStyle = .presenter
@@ -36,12 +52,14 @@ struct MacOverlayView: View {
     let onRemoveAPIKey: () -> Void
     let onStartPairing: (ControllerDocument) -> Void
     let onNextSlide: () -> Void
+    let onWorkspaceExpansionChanged: (Bool) -> Void
 
     @State private var permissionStatus = MacActionExecutor.permissionStatus
     @State private var showKeyboardHelp = false
     @State private var apiKeyEntry = ""
     @State private var apiKeyError: String?
-    @State private var showingSettings = false
+    @State private var showingSettings = true
+    @State private var selectedToolTab: EditorToolTab = .controls
 
     private var demoStyle: DemoControllerStyle {
         get { editorState.demoStyle }
@@ -63,10 +81,14 @@ struct MacOverlayView: View {
         nonmutating set { editorState.selectedControlID = newValue }
     }
 
+    private var isWorkspaceExpanded: Bool {
+        draft != nil
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .top) {
+        ZStack(alignment: .topTrailing) {
+            HStack(alignment: .top, spacing: 20) {
+                VStack(alignment: .leading, spacing: 18) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Universal Controller")
                             .font(.title2.weight(.semibold))
@@ -74,110 +96,130 @@ struct MacOverlayView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-                    Spacer()
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 12, weight: .bold))
-                            .frame(width: 24, height: 24)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Close")
-                }
+                    .padding(.trailing, isWorkspaceExpanded ? 0 : 30)
 
-                HStack {
-                    Button {
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            showingSettings.toggle()
+                    if isWorkspaceExpanded {
+                        HStack {
+                            Button {
+                                withAnimation(.smooth(duration: 0.3)) {
+                                    showingSettings.toggle()
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .frame(width: 30, height: 24)
+                                    .background(.quaternary.opacity(0.6), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .help("App and generation settings")
+
+                            pairingToolbarControl
+                            Spacer()
                         }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 14, weight: .semibold))
-                            .frame(width: 30, height: 24)
-                            .background(.quaternary.opacity(0.6), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .help("App and generation settings")
-
-                    pairingToolbarControl
-                    Spacer()
-                }
-                .overlay(alignment: .topLeading) {
-                    if showingSettings {
-                        settingsPopover
-                            .offset(y: 32)
-                            .transition(.opacity.combined(
-                                with: .scale(scale: 0.98, anchor: .topLeading)
-                            ))
-                    }
-                }
-                .zIndex(10)
-
-                generationSection
-
-                if let context, MacActionExecutor.isKeynote(context.application) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("STARTING LAYOUT")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        if editorState.draftWasGenerated {
-                            Button("Use Demo Layout Instead") { makeDraft() }
-                                .disabled(!canEditDraft)
+                        .overlay(alignment: .topLeading) {
+                            if showingSettings {
+                                settingsPopover
+                                    .offset(y: 32)
+                                    .transition(.opacity.combined(
+                                        with: .scale(scale: 0.98, anchor: .topLeading)
+                                    ))
+                            }
                         }
-                        HStack(spacing: 16) {
-                            Picker("Demo layout", selection: Binding(
-                                get: { demoStyle }, set: { demoStyle = $0 }
-                            )) {
-                                ForEach(DemoControllerStyle.allCases) { style in
-                                    Text(style.rawValue).tag(style)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .zIndex(10)
+                    }
+
+                    if isWorkspaceExpanded {
+                        VStack(alignment: .leading, spacing: 18) {
+                            generationSection
+
+                            toolTabs
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                            if pairingHost.state != .idle {
+                                pairingSection
+                            }
+
+                            if let errorMessage {
+                                Text(errorMessage)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    } else {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 18) {
+                                if showingSettings {
+                                    settingsContent
+                                        .transition(.move(edge: .top).combined(with: .opacity))
+                                }
+
+                                generationSection
+
+                                if pairingHost.state != .idle {
+                                    pairingSection
+                                }
+
+                                if let errorMessage {
+                                    Text(errorMessage)
+                                        .font(.caption)
+                                        .foregroundStyle(.red)
                                 }
                             }
-                            .pickerStyle(.segmented)
-                            .disabled(!canEditDraft)
-                            Toggle("Phone tilt moves pointer", isOn: Binding(
-                                get: { includeTilt }, set: { includeTilt = $0 }
-                            ))
-                                .disabled(demoStyle != .gamepad || !canEditDraft)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                        .scrollIndicators(.hidden)
+                        .frame(maxHeight: .infinity)
                     }
                 }
+                .frame(width: isWorkspaceExpanded ? 340 : nil)
+                .frame(maxWidth: isWorkspaceExpanded ? nil : .infinity)
+                .frame(maxHeight: .infinity, alignment: .top)
 
-                if draft != nil {
-                    controllerEditor
+                if isWorkspaceExpanded {
+                    Divider()
+                        .transition(.opacity)
+
+                    previewWorkspace
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-                if pairingHost.state != .idle {
-                    pairingSection
-                }
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close")
 
-                if let errorMessage {
-                    Text(errorMessage)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
-
+            VStack {
+                Spacer()
                 HStack {
-                    Text(editorState.draftWasGenerated
-                        ? "AI draft ready for review. Pair when the controls look right."
-                        : "Edit a demo controller or generate one from a request.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     Spacer()
                     Text("esc to close")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
             }
-            .padding(24)
         }
-        .frame(width: 700, height: 730)
+        .padding(24)
+        .frame(width: isWorkspaceExpanded ? 1100 : 430, height: 760)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
         .onAppear {
-            if draft?.target.bundleIdentifier != context?.application.bundleIdentifier {
-                makeDraft()
-            }
+            showingSettings = !isWorkspaceExpanded
         }
-        .onChange(of: demoStyle) { _, _ in makeDraft() }
-        .onChange(of: includeTilt) { _, _ in makeDraft() }
+        .onChange(of: isWorkspaceExpanded) { _, expanded in
+            withAnimation(.smooth(duration: 0.55)) {
+                showingSettings = false
+                selectedToolTab = .controls
+            }
+            onWorkspaceExpansionChanged(expanded)
+        }
+        .animation(.smooth(duration: 0.55), value: isWorkspaceExpanded)
         .task {
             while !Task.isCancelled {
                 permissionStatus = MacActionExecutor.permissionStatus
@@ -187,7 +229,7 @@ struct MacOverlayView: View {
         }
     }
 
-    private var settingsPopover: some View {
+    private var settingsContent: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Settings")
                 .font(.headline)
@@ -314,21 +356,18 @@ struct MacOverlayView: View {
                 }
             }
         }
+    }
+
+    private var settingsPopover: some View {
+        settingsContent
         .padding(18)
         .frame(width: 420)
-        .background {
-            RoundedRectangle(cornerRadius: 14)
-                .fill(.ultraThickMaterial)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(.white.opacity(0.10))
-                }
-        }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(.white.opacity(0.16))
+                .strokeBorder(.quaternary)
         )
-        .shadow(color: .black.opacity(0.25), radius: 14, y: 8)
+        .shadow(color: .black.opacity(0.20), radius: 12, y: 6)
     }
 
     @ViewBuilder
@@ -338,7 +377,7 @@ struct MacOverlayView: View {
             Button("Pair iPhone") {
                 startPairing()
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(SolidGreyButtonStyle())
             .disabled(draftValidationError != nil || editorState.isGenerating)
         case .starting, .waiting, .authenticating:
             Label("Pairing iPhone", systemImage: "iphone.radiowaves.left.and.right")
@@ -472,10 +511,6 @@ private extension MacOverlayView {
             }
 
             HStack(alignment: .center, spacing: 12) {
-                Text("Generation sends the selected app window, your request, and app details to OpenAI.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 if editorState.isGenerating {
                     ProgressView()
@@ -487,7 +522,7 @@ private extension MacOverlayView {
                         systemImage: "sparkles"
                     )
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(SolidGreyButtonStyle())
                 .disabled(!canGenerate)
             }
 
@@ -526,7 +561,7 @@ private extension MacOverlayView {
     }
 
     var draftValidationError: String? {
-        guard let draft else { return "Open Keynote to create a controller." }
+        guard let draft else { return "Generate a controller before pairing." }
         do {
             try SchemaValidator.validate(draft)
             return nil
@@ -568,94 +603,167 @@ private extension MacOverlayView {
         )
     }
 
-    var controllerEditor: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("PREVIEW & EDIT")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text("Select a control to edit it")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let draft {
-                HStack {
-                    Label("Phone orientation", systemImage: draft.preferredOrientation == .portrait
-                        ? "iphone"
-                        : "iphone.landscape")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Picker("Phone orientation", selection: Binding(
-                        get: { draft.preferredOrientation },
-                        set: { replaceDraft(preferredOrientation: $0) }
-                    )) {
-                        ForEach(ControllerOrientation.allCases, id: \.self) { orientation in
-                            Text(orientation.displayName).tag(orientation)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .frame(width: 220)
-                }
-
-                HStack(alignment: .top, spacing: 16) {
-                    controllerPreview(draft)
-                        .frame(
-                            width: draft.preferredOrientation == .portrait ? 260 : 360,
-                            height: draft.preferredOrientation == .portrait ? 360 : 240
-                        )
-                    inspector(draft)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                }
-                .disabled(!canEditDraft)
-            }
-
-            if let draftValidationError {
-                Label(draftValidationError, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
+    var assetLibraryPlaceholder: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "square.grid.2x2")
+                .font(.system(size: 30, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text("Drag-and-drop controls")
+                .font(.headline)
+            Text("Buttons, sliders, joysticks, and more will appear here.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, minHeight: 180)
+        .background(.quaternary.opacity(0.22), in: RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(
+                    .secondary.opacity(0.35),
+                    style: StrokeStyle(lineWidth: 1, dash: [6, 5])
+                )
         }
     }
 
-    func controllerPreview(_ draft: ControllerDocument) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            TextField("Controller name", text: Binding(
-                get: { self.draft?.name ?? "" },
-                set: { replaceDraft(name: $0) }
-            ))
-            .font(.subheadline.weight(.semibold))
-            .textFieldStyle(.plain)
+    var toolTabs: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 2) {
+                ForEach(EditorToolTab.allCases) { tab in
+                    Button {
+                        withAnimation(.smooth(duration: 0.2)) {
+                            selectedToolTab = tab
+                        }
+                    } label: {
+                        Label(tab.rawValue, systemImage: tab.systemImage)
+                            .font(.subheadline.weight(
+                                selectedToolTab == tab ? .semibold : .regular
+                            ))
+                            .foregroundStyle(selectedToolTab == tab ? .primary : .secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .background(
+                        selectedToolTab == tab
+                            ? Color.primary.opacity(0.13)
+                            : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 9)
+                    )
+                }
+            }
+            .padding(3)
+            .frame(maxWidth: .infinity)
+            .background(.black.opacity(0.10), in: RoundedRectangle(cornerRadius: 11))
 
-            GeometryReader { geometry in
-                let rows = previewRows(for: draft)
-                let spacing: CGFloat = 8
-                let units = rows.reduce(0) { $0 + $1.heightUnits }
-                let available = max(0, geometry.size.height - CGFloat(max(rows.count - 1, 0)) * spacing)
-                let contentHeight = max(available, CGFloat(units) * 54)
+            switch selectedToolTab {
+            case .controls:
+                if let draft {
+                    VStack(alignment: .leading, spacing: 12) {
+                        inspector(draft)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .disabled(!canEditDraft)
 
-                ScrollView {
-                    Grid(horizontalSpacing: spacing, verticalSpacing: spacing) {
-                        ForEach(rows) { row in
-                            GridRow {
-                                ForEach(row.items) { item in
-                                    if let control = draft.control(id: item.controlID) {
-                                        previewCell(control)
-                                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                            .gridCellColumns(item.columnSpan)
-                                    }
-                                }
-                            }
-                            .frame(height: contentHeight * CGFloat(row.heightUnits) / CGFloat(max(units, 1)))
+                        if let draftValidationError {
+                            Label(draftValidationError, systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
                         }
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .transition(.opacity)
+                }
+            case .assets:
+                ScrollView {
+                    assetLibraryPlaceholder
                 }
                 .scrollIndicators(.hidden)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .transition(.opacity)
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .animation(.smooth(duration: 0.22), value: selectedToolTab)
+    }
+
+    var previewWorkspace: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("PREVIEW")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Spacer(minLength: 20)
+
+            HStack {
+                Spacer()
+                if let draft {
+                    controllerPreview(draft)
+                        .frame(
+                            width: draft.preferredOrientation == .portrait ? 320 : 600,
+                            height: draft.preferredOrientation == .portrait ? 430 : 350
+                        )
+                        .disabled(!canEditDraft)
+                } else {
+                    EmptyPhonePreview()
+                        .frame(width: 600, height: 350)
+                }
+                Spacer()
+            }
+
+            Spacer(minLength: 20)
+
+            HStack {
+                if let draft {
+                    orientationPicker(for: draft)
+                }
+                Spacer()
+            }
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    func orientationPicker(for draft: ControllerDocument) -> some View {
+        Picker("Phone orientation", selection: Binding(
+            get: { draft.preferredOrientation },
+            set: { replaceDraft(preferredOrientation: $0) }
+        )) {
+            ForEach(ControllerOrientation.allCases, id: \.self) { orientation in
+                Text(orientation.displayName).tag(orientation)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .frame(width: 180)
+        .tint(.gray)
+    }
+
+    func controllerPreview(_ draft: ControllerDocument) -> some View {
+        GeometryReader { geometry in
+            let rows = previewRows(for: draft)
+            let spacing: CGFloat = 8
+            let units = rows.reduce(0) { $0 + $1.heightUnits }
+            let available = max(0, geometry.size.height - CGFloat(max(rows.count - 1, 0)) * spacing)
+            let contentHeight = max(available, CGFloat(units) * 54)
+
+            ScrollView {
+                Grid(horizontalSpacing: spacing, verticalSpacing: spacing) {
+                    ForEach(rows) { row in
+                        GridRow {
+                            ForEach(row.items) { item in
+                                if let control = draft.control(id: item.controlID) {
+                                    previewCell(control)
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                        .gridCellColumns(item.columnSpan)
+                                }
+                            }
+                        }
+                        .frame(height: contentHeight * CGFloat(row.heightUnits) / CGFloat(max(units, 1)))
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .scrollIndicators(.hidden)
         }
         .padding(14)
         .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 22))
@@ -726,95 +834,95 @@ private extension MacOverlayView {
     func inspector(_ draft: ControllerDocument) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-            if let id = selectedControlID,
-               let control = draft.control(id: id),
-               let index = draft.layout.items.firstIndex(where: { $0.controlID == id }) {
-                Text(control.kind.capabilityID.rawValue.capitalized)
-                    .font(.headline)
+                if let id = selectedControlID,
+                   let control = draft.control(id: id),
+                   let index = draft.layout.items.firstIndex(where: { $0.controlID == id }) {
+                    Text(control.kind.capabilityID.rawValue.capitalized)
+                        .font(.headline)
 
-                TextField("Label", text: Binding(
-                    get: { self.draft?.control(id: id)?.label ?? "" },
-                    set: { label in
-                        updateControl(id) { ControlDefinition(id: $0.id, label: label, kind: $0.kind) }
-                    }
-                ))
-                .textFieldStyle(.roundedBorder)
-
-                HStack {
-                    Button("Move earlier", systemImage: "arrow.up") { moveControl(id, by: -1) }
-                        .disabled(index == 0)
-                    Button("Move later", systemImage: "arrow.down") { moveControl(id, by: 1) }
-                        .disabled(index == draft.layout.items.count - 1)
-                }
-                .labelStyle(.iconOnly)
-                .help("Change the control's position in the phone layout")
-
-                Stepper("Width: \(draft.layout.items[index].columnSpan) column(s)", value: Binding(
-                    get: { self.draft?.layout.items.first(where: { $0.controlID == id })?.columnSpan ?? 1 },
-                    set: { updateSize(id, columns: $0) }
-                ), in: 1...draft.layout.columns)
-
-                Stepper("Height: \(draft.layout.items[index].rowSpan) unit(s)", value: Binding(
-                    get: { self.draft?.layout.items.first(where: { $0.controlID == id })?.rowSpan ?? 1 },
-                    set: { updateSize(id, rows: $0) }
-                ), in: 1...SchemaValidator.maximumSpan)
-
-                if case .button(let configuration) = control.kind {
-                    Picker("Face", selection: Binding(
-                        get: { currentButtonConfiguration(id)?.face ?? .standard },
-                        set: { face in
-                            updateControl(id) { control in
-                                ControlDefinition(id: control.id, label: control.label, kind: .button(
-                                    ButtonControlConfiguration(
-                                        variant: configuration.variant,
-                                        hapticsEnabled: configuration.hapticsEnabled,
-                                        face: face
-                                    )
-                                ))
-                            }
+                    TextField("Label", text: Binding(
+                        get: { self.draft?.control(id: id)?.label ?? "" },
+                        set: { label in
+                            updateControl(id) { ControlDefinition(id: $0.id, label: label, kind: $0.kind) }
                         }
-                    )) {
-                        ForEach(ButtonFace.allCases, id: \.self) { face in
-                            Text(face == .standard ? "Standard" : face.rawValue.uppercased()).tag(face)
-                        }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+
+                    HStack {
+                        Button("Move earlier", systemImage: "arrow.up") { moveControl(id, by: -1) }
+                            .disabled(index == 0)
+                        Button("Move later", systemImage: "arrow.down") { moveControl(id, by: 1) }
+                            .disabled(index == draft.layout.items.count - 1)
                     }
-                    if configuration.face == .standard {
-                        Picker("Style", selection: Binding(
-                            get: { currentButtonConfiguration(id)?.variant ?? .primary },
-                            set: { variant in
+                    .labelStyle(.iconOnly)
+                    .help("Change the control's position in the phone layout")
+
+                    Stepper("Width: \(draft.layout.items[index].columnSpan) column(s)", value: Binding(
+                        get: { self.draft?.layout.items.first(where: { $0.controlID == id })?.columnSpan ?? 1 },
+                        set: { updateSize(id, columns: $0) }
+                    ), in: 1...draft.layout.columns)
+
+                    Stepper("Height: \(draft.layout.items[index].rowSpan) unit(s)", value: Binding(
+                        get: { self.draft?.layout.items.first(where: { $0.controlID == id })?.rowSpan ?? 1 },
+                        set: { updateSize(id, rows: $0) }
+                    ), in: 1...SchemaValidator.maximumSpan)
+
+                    if case .button(let configuration) = control.kind {
+                        Picker("Face", selection: Binding(
+                            get: { currentButtonConfiguration(id)?.face ?? .standard },
+                            set: { face in
                                 updateControl(id) { control in
                                     ControlDefinition(id: control.id, label: control.label, kind: .button(
                                         ButtonControlConfiguration(
-                                            variant: variant,
+                                            variant: configuration.variant,
                                             hapticsEnabled: configuration.hapticsEnabled,
-                                            face: configuration.face
+                                            face: face
                                         )
                                     ))
                                 }
                             }
                         )) {
-                            Text("Primary").tag(ButtonVariant.primary)
-                            Text("Secondary").tag(ButtonVariant.secondary)
-                            Text("Destructive").tag(ButtonVariant.destructive)
+                            ForEach(ButtonFace.allCases, id: \.self) { face in
+                                Text(face == .standard ? "Standard" : face.rawValue.uppercased()).tag(face)
+                            }
+                        }
+                        if configuration.face == .standard {
+                            Picker("Style", selection: Binding(
+                                get: { currentButtonConfiguration(id)?.variant ?? .primary },
+                                set: { variant in
+                                    updateControl(id) { control in
+                                        ControlDefinition(id: control.id, label: control.label, kind: .button(
+                                            ButtonControlConfiguration(
+                                                variant: variant,
+                                                hapticsEnabled: configuration.hapticsEnabled,
+                                                face: configuration.face
+                                            )
+                                        ))
+                                    }
+                                }
+                            )) {
+                                Text("Primary").tag(ButtonVariant.primary)
+                                Text("Secondary").tag(ButtonVariant.secondary)
+                                Text("Destructive").tag(ButtonVariant.destructive)
+                            }
                         }
                     }
-                }
 
-                Divider()
-                Text("ACTION")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                actionInspector(id)
-            } else {
-                Text("Select a control in the preview")
-                    .foregroundStyle(.secondary)
-            }
+                    Divider()
+                    Text("ACTION")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    actionInspector(id)
+                } else {
+                    Text("Select a control in the preview")
+                        .foregroundStyle(.secondary)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
+            .padding(.trailing, 6)
         }
-        .frame(height: 360)
-        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 14))
+        .scrollIndicators(.visible)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
@@ -944,6 +1052,42 @@ private extension MacOverlayView {
         return action
     }
 
+}
+
+private struct SolidGreyButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.semibold))
+            .foregroundStyle(.white.opacity(isEnabled ? 0.95 : 0.45))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.white.opacity(
+                        isEnabled
+                            ? (configuration.isPressed ? 0.28 : 0.22)
+                            : 0.10
+                    ))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(.white.opacity(isEnabled ? 0.18 : 0.08))
+            )
+    }
+}
+
+private struct EmptyPhonePreview: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 24)
+            .fill(.black.opacity(0.92))
+            .overlay {
+                RoundedRectangle(cornerRadius: 24)
+                    .strokeBorder(.white.opacity(0.10))
+            }
+        .accessibilityLabel("Controller preview waiting for generation")
+    }
 }
 
 private struct PreviewRow: Identifiable {

@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import SwiftUI
 
 @MainActor
@@ -33,6 +34,12 @@ final class OverlayPanelController {
     }
 
     private func open(context: AppContext?, errorMessage: String?) {
+        if editorState.draft?.target.bundleIdentifier != context?.application.bundleIdentifier {
+            editorState.draft = nil
+            editorState.selectedControlID = nil
+            editorState.draftWasGenerated = false
+            editorState.isIterativePrompt = false
+        }
         if editorState.isGenerating,
            generationTargetBundleID != context?.application.bundleIdentifier {
             generationTask?.cancel()
@@ -80,8 +87,9 @@ final class OverlayPanelController {
     }
 
     private func makePanel(context: AppContext?, errorMessage: String?) -> OverlayPanel {
+        let initialWidth: CGFloat = editorState.draft == nil ? 430 : 1100
         let panel = OverlayPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 700, height: 730),
+            contentRect: NSRect(x: 0, y: 0, width: initialWidth, height: 760),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -120,9 +128,52 @@ final class OverlayPanelController {
                 Task { @MainActor [weak self] in
                     await self?.sendNextSlide(context: context)
                 }
+            },
+            onWorkspaceExpansionChanged: { [weak self] expanded in
+                self?.setWorkspaceExpanded(expanded)
             }
         ))
         return panel
+    }
+
+    private func setWorkspaceExpanded(_ expanded: Bool) {
+        guard let panel else { return }
+        let targetWidth: CGFloat = expanded ? 1100 : 430
+        guard abs(panel.frame.width - targetWidth) > 1 else { return }
+
+        let currentFrame = panel.frame
+        let screen = NSScreen.screens.first {
+            $0.frame.intersects(currentFrame)
+        } ?? NSScreen.main
+        var targetFrame = NSRect(
+            x: currentFrame.midX - targetWidth / 2,
+            y: currentFrame.minY,
+            width: targetWidth,
+            height: 760
+        )
+        if let visibleFrame = screen?.visibleFrame {
+            targetFrame.origin.x = min(
+                max(targetFrame.minX, visibleFrame.minX),
+                max(visibleFrame.minX, visibleFrame.maxX - targetWidth)
+            )
+            targetFrame.origin.y = min(
+                max(targetFrame.minY, visibleFrame.minY),
+                max(visibleFrame.minY, visibleFrame.maxY - targetFrame.height)
+            )
+        }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.55
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            context.allowsImplicitAnimation = true
+            panel.animator().setFrame(targetFrame, display: true)
+        } completionHandler: { [weak self, weak panel] in
+            Task { @MainActor [weak self, weak panel] in
+                if let panel {
+                    self?.lastPanelOrigin = panel.frame.origin
+                }
+            }
+        }
     }
 
     private func makeController(
