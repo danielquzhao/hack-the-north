@@ -1,7 +1,7 @@
 import Foundation
 
 struct ControllerDocument: Codable, Equatable, Sendable, Identifiable {
-    static let currentSchemaVersion = 3
+    static let currentSchemaVersion = 4
 
     let schemaVersion: Int
     let id: UUID
@@ -101,7 +101,7 @@ enum ControlCapabilityID: String, Codable, CaseIterable, Equatable, Sendable {
     case button
     case joystick
     case motion
-    case swipePad
+    case trackpad
     case pinchPad
     case rotationPad
 }
@@ -138,28 +138,12 @@ struct JoystickControlConfiguration: Codable, Equatable, Sendable {
     let hapticsEnabled: Bool
 }
 
-struct SwipePadControlConfiguration: Codable, Equatable, Sendable {
+struct TrackpadControlConfiguration: Codable, Equatable, Sendable {
     let hapticsEnabled: Bool
 }
 
 struct TwoFingerControlConfiguration: Codable, Equatable, Sendable {
     let hapticsEnabled: Bool
-}
-
-enum SwipeDirection: String, Codable, CaseIterable, Hashable, Sendable {
-    case left
-    case right
-    case up
-    case down
-
-    var event: ControlEventKind {
-        switch self {
-        case .left: .swipedLeft
-        case .right: .swipedRight
-        case .up: .swipedUp
-        case .down: .swipedDown
-        }
-    }
 }
 
 enum PinchDirection: String, Codable, CaseIterable, Hashable, Sendable {
@@ -198,15 +182,15 @@ enum ControlKind: Equatable, Sendable {
     case button(ButtonControlConfiguration)
     case joystick(JoystickControlConfiguration)
     case motion(MotionControlConfiguration)
-    case swipePad(SwipePadControlConfiguration)
+    case trackpad(TrackpadControlConfiguration)
     case pinchPad(TwoFingerControlConfiguration)
     case rotationPad(TwoFingerControlConfiguration)
 
     var outputKind: InputValueKind {
         switch self {
-        case .button, .swipePad, .pinchPad, .rotationPad:
+        case .button, .pinchPad, .rotationPad:
             .none
-        case .joystick, .motion:
+        case .joystick, .motion, .trackpad:
             .vector2
         }
     }
@@ -219,8 +203,8 @@ enum ControlKind: Equatable, Sendable {
             .joystick
         case .motion:
             .motion
-        case .swipePad:
-            .swipePad
+        case .trackpad:
+            .trackpad
         case .pinchPad:
             .pinchPad
         case .rotationPad:
@@ -234,8 +218,8 @@ enum ControlKind: Equatable, Sendable {
             [.triggered, .began, .ended]
         case .joystick, .motion:
             [.changed]
-        case .swipePad:
-            Set(SwipeDirection.allCases.map(\.event))
+        case .trackpad:
+            [.began, .changed, .ended, .pinchChanged]
         case .pinchPad:
             Set(PinchDirection.allCases.map(\.event))
         case .rotationPad:
@@ -283,11 +267,11 @@ struct ControlDefinition: Equatable, Sendable, Identifiable {
         )
     }
 
-    static func swipePad(id: String, label: String) -> ControlDefinition {
+    static func trackpad(id: String, label: String) -> ControlDefinition {
         ControlDefinition(
             id: id,
             label: label,
-            kind: .swipePad(SwipePadControlConfiguration(hapticsEnabled: true))
+            kind: .trackpad(TrackpadControlConfiguration(hapticsEnabled: true))
         )
     }
 
@@ -337,9 +321,9 @@ extension ControlDefinition: Codable {
                 MotionControlConfiguration.self,
                 forKey: .configuration
             ))
-        case .swipePad:
-            kind = .swipePad(try container.decode(
-                SwipePadControlConfiguration.self,
+        case .trackpad:
+            kind = .trackpad(try container.decode(
+                TrackpadControlConfiguration.self,
                 forKey: .configuration
             ))
         case .pinchPad:
@@ -370,8 +354,8 @@ extension ControlDefinition: Codable {
         case .motion(let configuration):
             try container.encode(ControlCapabilityID.motion, forKey: .type)
             try container.encode(configuration, forKey: .configuration)
-        case .swipePad(let configuration):
-            try container.encode(ControlCapabilityID.swipePad, forKey: .type)
+        case .trackpad(let configuration):
+            try container.encode(ControlCapabilityID.trackpad, forKey: .type)
             try container.encode(configuration, forKey: .configuration)
         case .pinchPad(let configuration):
             try container.encode(ControlCapabilityID.pinchPad, forKey: .type)
@@ -388,10 +372,7 @@ enum ControlEventKind: String, Codable, Equatable, Hashable, Sendable {
     case began
     case changed
     case ended
-    case swipedLeft
-    case swipedRight
-    case swipedUp
-    case swipedDown
+    case pinchChanged
     case pinchedIn
     case pinchedOut
     case rotatedClockwise
@@ -513,20 +494,41 @@ struct MouseMoveAction: Codable, Equatable, Sendable {
     let deadZone: Double
 }
 
+enum MouseButton: String, Codable, CaseIterable, Equatable, Sendable {
+    case left
+    case right
+    case middle
+}
+
+struct MouseDragAction: Codable, Equatable, Sendable {
+    let gain: Double
+    let deadZone: Double
+    let button: MouseButton
+    let modifiers: [KeyModifier]
+}
+
+struct ScrollAction: Codable, Equatable, Sendable {
+    let gain: Double
+}
+
 enum ActionCapabilityID: String, Codable, CaseIterable, Equatable, Sendable {
     case keyChord
     case mouseMove
+    case mouseDrag
+    case scroll
 }
 
 enum ActionDefinition: Equatable, Sendable {
     case keyChord(KeyChordAction)
     case mouseMove(MouseMoveAction)
+    case mouseDrag(MouseDragAction)
+    case scroll(ScrollAction)
 
     var acceptedInputKinds: Set<InputValueKind> {
         switch self {
         case .keyChord:
             [.none]
-        case .mouseMove:
+        case .mouseMove, .mouseDrag, .scroll:
             [.vector2]
         }
     }
@@ -537,6 +539,10 @@ enum ActionDefinition: Equatable, Sendable {
             .keyChord
         case .mouseMove:
             .mouseMove
+        case .mouseDrag:
+            .mouseDrag
+        case .scroll:
+            .scroll
         }
     }
 }
@@ -554,6 +560,10 @@ extension ActionDefinition: Codable {
             self = .keyChord(try container.decode(KeyChordAction.self, forKey: .configuration))
         case .mouseMove:
             self = .mouseMove(try container.decode(MouseMoveAction.self, forKey: .configuration))
+        case .mouseDrag:
+            self = .mouseDrag(try container.decode(MouseDragAction.self, forKey: .configuration))
+        case .scroll:
+            self = .scroll(try container.decode(ScrollAction.self, forKey: .configuration))
         }
     }
 
@@ -565,6 +575,12 @@ extension ActionDefinition: Codable {
             try container.encode(configuration, forKey: .configuration)
         case .mouseMove(let configuration):
             try container.encode(ActionCapabilityID.mouseMove, forKey: .type)
+            try container.encode(configuration, forKey: .configuration)
+        case .mouseDrag(let configuration):
+            try container.encode(ActionCapabilityID.mouseDrag, forKey: .type)
+            try container.encode(configuration, forKey: .configuration)
+        case .scroll(let configuration):
+            try container.encode(ActionCapabilityID.scroll, forKey: .type)
             try container.encode(configuration, forKey: .configuration)
         }
     }

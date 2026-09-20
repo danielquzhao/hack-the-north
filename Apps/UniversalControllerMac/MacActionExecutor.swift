@@ -15,7 +15,7 @@ enum MacActionError: LocalizedError {
         case .wrongTarget:
             "Open Keynote before using the Next Slide test button."
         case .targetQuit:
-            "Keynote has quit. Open it and try again."
+            "The target app has quit. Open it and try again."
         case .accessibilityRequired:
             "Allow Universal Controller in Accessibility settings, then try again."
         case .keyboardControlRequired:
@@ -167,6 +167,123 @@ enum MacActionExecutor {
             throw MacActionError.eventUnavailable
         }
         event.post(tap: .cghidEventTap)
+    }
+
+    static func beginMouseDrag(
+        _ action: MouseDragAction,
+        to application: NSRunningApplication
+    ) async throws {
+        try await preparePointerTarget(application)
+        try postMouseDrag(action, phase: .began, value: .init(x: 0, y: 0))
+    }
+
+    static func moveMouseDrag(
+        _ action: MouseDragAction,
+        value: Vector2Value,
+        to application: NSRunningApplication
+    ) throws {
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == application.processIdentifier else {
+            throw MacActionError.activationFailed
+        }
+        try postMouseDrag(action, phase: .changed, value: value)
+    }
+
+    static func endMouseDrag(_ action: MouseDragAction) {
+        try? postMouseDrag(action, phase: .ended, value: .init(x: 0, y: 0))
+    }
+
+    static func sendScroll(
+        _ action: ScrollAction,
+        value: Vector2Value,
+        to application: NSRunningApplication
+    ) async throws {
+        try await preparePointerTarget(application)
+        let pixels = Int32((value.y * action.gain * 20).rounded())
+        guard pixels != 0,
+              let event = CGEvent(
+                  scrollWheelEvent2Source: CGEventSource(stateID: .hidSystemState),
+                  units: .pixel,
+                  wheelCount: 1,
+                  wheel1: pixels,
+                  wheel2: 0,
+                  wheel3: 0
+              ) else { return }
+        if let current = CGEvent(source: nil)?.location {
+            event.location = current
+        }
+        event.post(tap: .cghidEventTap)
+    }
+
+    private enum DragPhase { case began, changed, ended }
+
+    private static func postMouseDrag(
+        _ action: MouseDragAction,
+        phase: DragPhase,
+        value: Vector2Value
+    ) throws {
+        guard let current = CGEvent(source: nil)?.location else {
+            throw MacActionError.eventUnavailable
+        }
+        func distance(_ component: Double) -> Double {
+            let magnitude = abs(component)
+            guard magnitude > action.deadZone else { return 0 }
+            return (component < 0 ? -1 : 1) *
+                (magnitude - action.deadZone) / (1 - action.deadZone) * action.gain
+        }
+        let position = CGPoint(
+            x: current.x + distance(value.x),
+            y: current.y + distance(value.y)
+        )
+        let type: CGEventType
+        let button: CGMouseButton
+        switch action.button {
+        case .left:
+            button = .left
+            type = switch phase {
+            case .began: .leftMouseDown
+            case .changed: .leftMouseDragged
+            case .ended: .leftMouseUp
+            }
+        case .right:
+            button = .right
+            type = switch phase {
+            case .began: .rightMouseDown
+            case .changed: .rightMouseDragged
+            case .ended: .rightMouseUp
+            }
+        case .middle:
+            button = .center
+            type = switch phase {
+            case .began: .otherMouseDown
+            case .changed: .otherMouseDragged
+            case .ended: .otherMouseUp
+            }
+        }
+        guard let event = CGEvent(
+            mouseEventSource: CGEventSource(stateID: .hidSystemState),
+            mouseType: type,
+            mouseCursorPosition: position,
+            mouseButton: button
+        ) else { throw MacActionError.eventUnavailable }
+        event.flags = eventFlags(for: action.modifiers)
+        event.post(tap: .cghidEventTap)
+    }
+
+    private static func preparePointerTarget(_ application: NSRunningApplication) async throws {
+        guard !application.isTerminated else { throw MacActionError.targetQuit }
+        guard AXIsProcessTrusted() else { throw MacActionError.accessibilityRequired }
+        guard CGPreflightPostEventAccess() else { throw MacActionError.keyboardControlRequired }
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier == application.processIdentifier {
+            return
+        }
+        guard application.activate() else { throw MacActionError.activationFailed }
+        for _ in 0..<12 {
+            if NSWorkspace.shared.frontmostApplication?.processIdentifier == application.processIdentifier {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(75))
+        }
+        throw MacActionError.activationFailed
     }
 
     private static func keyCode(for key: SemanticKey) -> CGKeyCode {

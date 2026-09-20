@@ -109,6 +109,7 @@ final class PairingClient: ObservableObject {
 
         let now = Date()
         if event == .changed,
+           control.kind.capabilityID != .trackpad,
            let previous = lastContinuousSentAt[control.id],
            now.timeIntervalSince(previous) < 1.0 / 30.0 { return }
 

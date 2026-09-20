@@ -308,6 +308,7 @@ final class OverlayPanelController {
         do {
             try await router.handle(event)
         } catch {
+            router.cancelActiveDrag()
             open(context: context, errorMessage: error.localizedDescription)
         }
     }

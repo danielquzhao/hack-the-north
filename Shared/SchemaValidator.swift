@@ -37,9 +37,9 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
                 events: [.changed]
             ),
             ControlCapabilityDescriptor(
-                id: .swipePad,
-                outputKind: .none,
-                events: SwipeDirection.allCases.map(\.event)
+                id: .trackpad,
+                outputKind: .vector2,
+                events: [.began, .changed, .ended, .pinchChanged]
             ),
             ControlCapabilityDescriptor(
                 id: .pinchPad,
@@ -59,6 +59,14 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
             ),
             ActionCapabilityDescriptor(
                 id: .mouseMove,
+                acceptedInputKinds: [.vector2]
+            ),
+            ActionCapabilityDescriptor(
+                id: .mouseDrag,
+                acceptedInputKinds: [.vector2]
+            ),
+            ActionCapabilityDescriptor(
+                id: .scroll,
                 acceptedInputKinds: [.vector2]
             ),
         ],
@@ -172,28 +180,48 @@ enum SchemaValidator {
                Set(action.modifiers).count != action.modifiers.count {
                 throw error("Keyboard shortcut modifiers cannot contain duplicates.")
             }
-            if case .mouseMove(let action) = binding.action,
-               (!action.gain.isFinite || !(1...40).contains(action.gain) ||
-                !action.deadZone.isFinite || !(0...0.5).contains(action.deadZone)) {
-                throw error("Mouse movement gain or dead zone is out of range.")
+            switch binding.action {
+            case .mouseMove(let action):
+                guard action.gain.isFinite, (1...40).contains(action.gain),
+                      action.deadZone.isFinite, (0...0.5).contains(action.deadZone) else {
+                    throw error("Mouse movement gain or dead zone is out of range.")
+                }
+            case .mouseDrag(let action):
+                guard action.gain.isFinite, (1...40).contains(action.gain),
+                      action.deadZone.isFinite, (0...0.5).contains(action.deadZone),
+                      Set(action.modifiers).count == action.modifiers.count else {
+                    throw error("Mouse drag settings are invalid.")
+                }
+            case .scroll(let action):
+                guard action.gain.isFinite, (1...40).contains(action.gain) else {
+                    throw error("Scroll gain is out of range.")
+                }
+            case .keyChord:
+                break
             }
         }
 
         for control in document.controls {
             let requiredEvents: [ControlEventKind]
             switch control.kind {
-            case .swipePad:
-                requiredEvents = SwipeDirection.allCases.map(\.event)
             case .pinchPad:
                 requiredEvents = PinchDirection.allCases.map(\.event)
             case .rotationPad:
                 requiredEvents = RotationDirection.allCases.map(\.event)
+            case .trackpad:
+                requiredEvents = [.changed, .pinchChanged]
             default:
                 continue
             }
             for event in requiredEvents {
                 guard document.binding(controlID: control.id, event: event) != nil else {
                     throw error("Gesture control '\(control.id)' needs a \(event.rawValue) mapping.")
+                }
+            }
+            if case .trackpad = control.kind {
+                guard case .mouseDrag = document.binding(controlID: control.id, event: .changed)?.action,
+                      case .scroll = document.binding(controlID: control.id, event: .pinchChanged)?.action else {
+                    throw error("Trackpad needs drag and zoom mappings.")
                 }
             }
         }
@@ -260,8 +288,10 @@ enum SchemaValidator {
         }
         let binding = document.binding(controlID: event.controlID, event: event.event)
             ?? (event.event == .began || event.event == .ended
-                ? document.binding(controlID: event.controlID, event: .triggered)
-                : nil)
+                ? document.binding(
+                    controlID: event.controlID,
+                    event: control.kind.capabilityID == .trackpad ? .changed : .triggered
+                ) : nil)
         guard let binding else {
             throw error("Control event has no action binding.")
         }

@@ -757,7 +757,7 @@ private extension MacOverlayView {
                 case .motion:
                     Image(systemName: "iphone.gen3.radiowaves.left.and.right")
                         .font(.title2)
-                case .swipePad:
+                case .trackpad:
                     Image(systemName: "hand.draw")
                         .font(.title2)
                 case .pinchPad:
@@ -803,7 +803,7 @@ private extension MacOverlayView {
             }
         case .joystick: .blue
         case .motion: .teal
-        case .swipePad: .purple
+        case .trackpad: .purple
         case .pinchPad: .orange
         case .rotationPad: .pink
         }
@@ -905,15 +905,8 @@ private extension MacOverlayView {
 
     @ViewBuilder
     func actionInspector(_ id: String) -> some View {
-        if let control = draft?.control(id: id), case .swipePad = control.kind {
-            ForEach(SwipeDirection.allCases, id: \.self) { direction in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Swipe \(direction.rawValue.capitalized)")
-                        .font(.subheadline.weight(.semibold))
-                    keyChordInspector(id, event: direction.event)
-                }
-                .padding(.vertical, 4)
-            }
+        if let control = draft?.control(id: id), case .trackpad = control.kind {
+            trackpadInspector(id)
         } else if let control = draft?.control(id: id), case .pinchPad = control.kind {
             ForEach(PinchDirection.allCases, id: \.self) { direction in
                 VStack(alignment: .leading, spacing: 6) {
@@ -950,7 +943,76 @@ private extension MacOverlayView {
                         set: { setAction(id, .mouseMove(MouseMoveAction(gain: currentMouseMove(id).gain, deadZone: $0))) }
                     ), in: 0...0.5)
                 }
+            case .mouseDrag, .scroll:
+                trackpadInspector(id)
             }
+        }
+    }
+
+    func trackpadInspector(_ id: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("ONE FINGER DRAG")
+                .font(.caption.weight(.semibold))
+            Picker("Mouse button", selection: Binding(
+                get: { currentMouseDrag(id).button },
+                set: { button in
+                    let current = currentMouseDrag(id)
+                    setAction(id, .mouseDrag(MouseDragAction(
+                        gain: current.gain, deadZone: current.deadZone,
+                        button: button, modifiers: current.modifiers
+                    )), event: .changed)
+                }
+            )) {
+                ForEach(MouseButton.allCases, id: \.self) { button in
+                    Text(button.rawValue.capitalized).tag(button)
+                }
+            }
+            Stepper("Drag speed: \(Int(currentMouseDrag(id).gain))", value: Binding(
+                get: { currentMouseDrag(id).gain },
+                set: { gain in
+                    let current = currentMouseDrag(id)
+                    setAction(id, .mouseDrag(MouseDragAction(
+                        gain: gain, deadZone: current.deadZone,
+                        button: current.button, modifiers: current.modifiers
+                    )), event: .changed)
+                }
+            ), in: 1...40, step: 1)
+            VStack(alignment: .leading) {
+                Text("Dead zone: \(currentMouseDrag(id).deadZone, specifier: "%.2f")")
+                Slider(value: Binding(
+                    get: { currentMouseDrag(id).deadZone },
+                    set: { deadZone in
+                        let current = currentMouseDrag(id)
+                        setAction(id, .mouseDrag(MouseDragAction(
+                            gain: current.gain, deadZone: deadZone,
+                            button: current.button, modifiers: current.modifiers
+                        )), event: .changed)
+                    }
+                ), in: 0...0.5)
+            }
+            ForEach(KeyModifier.allCases, id: \.self) { modifier in
+                Toggle(modifier.rawValue.capitalized, isOn: Binding(
+                    get: { currentMouseDrag(id).modifiers.contains(modifier) },
+                    set: { enabled in
+                        let current = currentMouseDrag(id)
+                        var modifiers = current.modifiers.filter { $0 != modifier }
+                        if enabled { modifiers.append(modifier) }
+                        setAction(id, .mouseDrag(MouseDragAction(
+                            gain: current.gain, deadZone: current.deadZone,
+                            button: current.button, modifiers: modifiers
+                        )), event: .changed)
+                    }
+                ))
+            }
+            Divider()
+            Text("TWO FINGER PINCH")
+                .font(.caption.weight(.semibold))
+            Text("Scroll to zoom")
+                .font(.subheadline)
+            Stepper("Zoom speed: \(Int(currentScroll(id).gain))", value: Binding(
+                get: { currentScroll(id).gain },
+                set: { setAction(id, .scroll(ScrollAction(gain: $0)), event: .pinchChanged) }
+            ), in: 1...40, step: 1)
         }
     }
 
@@ -1071,6 +1133,22 @@ private extension MacOverlayView {
         guard let binding = draft?.bindings.first(where: { $0.controlID == id }),
               case .mouseMove(let action) = binding.action else {
             return MouseMoveAction(gain: 10, deadZone: 0.1)
+        }
+        return action
+    }
+
+    func currentMouseDrag(_ id: String) -> MouseDragAction {
+        guard let binding = draft?.binding(controlID: id, event: .changed),
+              case .mouseDrag(let action) = binding.action else {
+            return MouseDragAction(gain: 10, deadZone: 0, button: .left, modifiers: [])
+        }
+        return action
+    }
+
+    func currentScroll(_ id: String) -> ScrollAction {
+        guard let binding = draft?.binding(controlID: id, event: .pinchChanged),
+              case .scroll(let action) = binding.action else {
+            return ScrollAction(gain: 10)
         }
         return action
     }

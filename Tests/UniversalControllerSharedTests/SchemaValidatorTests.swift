@@ -19,9 +19,9 @@ final class SchemaValidatorTests: XCTestCase {
                 outputKind: .vector2,
                 events: [.changed]
             ), ControlCapabilityDescriptor(
-                id: .swipePad,
-                outputKind: .none,
-                events: SwipeDirection.allCases.map(\.event)
+                id: .trackpad,
+                outputKind: .vector2,
+                events: [.began, .changed, .ended, .pinchChanged]
             ), ControlCapabilityDescriptor(
                 id: .pinchPad,
                 outputKind: .none,
@@ -39,6 +39,12 @@ final class SchemaValidatorTests: XCTestCase {
                 acceptedInputKinds: [.none]
             ), ActionCapabilityDescriptor(
                 id: .mouseMove,
+                acceptedInputKinds: [.vector2]
+            ), ActionCapabilityDescriptor(
+                id: .mouseDrag,
+                acceptedInputKinds: [.vector2]
+            ), ActionCapabilityDescriptor(
+                id: .scroll,
                 acceptedInputKinds: [.vector2]
             )]
         )
@@ -66,35 +72,43 @@ final class SchemaValidatorTests: XCTestCase {
         }
     }
 
-    func testSwipePadRequiresAndRoutesEveryDirection() throws {
-        let bindings = SwipeDirection.allCases.map { direction in
+    func testTrackpadDragAndPinchRouteToSeparateActions() throws {
+        let bindings = [
             ControlBinding(
-                id: "swipe-\(direction.rawValue)",
-                controlID: "swipe",
-                event: direction.event,
-                action: .keyChord(KeyChordAction(key: .rightArrow, modifiers: []))
-            )
-        }
+                id: "pad-drag",
+                controlID: "pad",
+                event: .changed,
+                action: .mouseDrag(MouseDragAction(
+                    gain: 12, deadZone: 0, button: .middle, modifiers: []
+                ))
+            ),
+            ControlBinding(
+                id: "pad-zoom",
+                controlID: "pad",
+                event: .pinchChanged,
+                action: .scroll(ScrollAction(gain: 10))
+            ),
+        ]
         let document = makeDocument(
-            controls: [.swipePad(id: "swipe", label: "Slides")],
-            items: [ControllerLayoutItem(controlID: "swipe", columnSpan: 1, rowSpan: 1)],
+            controls: [.trackpad(id: "pad", label: "Navigate")],
+            items: [ControllerLayoutItem(controlID: "pad", columnSpan: 1, rowSpan: 1)],
             bindings: bindings
         )
         try SchemaValidator.validate(document)
 
-        for direction in SwipeDirection.allCases {
+        for (index, kind) in [ControlEventKind.began, .changed, .ended, .pinchChanged].enumerated() {
             let event = ControlEvent(
                 controllerID: document.id,
                 revision: document.revision,
-                controlID: "swipe",
-                event: direction.event,
-                sequence: 1,
+                controlID: "pad",
+                event: kind,
+                sequence: UInt64(index + 1),
                 timestamp: Date(),
-                value: .none
+                value: .vector2(Vector2Value(x: 0, y: 0.25))
             )
             XCTAssertEqual(
                 try SchemaValidator.binding(for: event, in: document).id,
-                "swipe-\(direction.rawValue)"
+                kind == .pinchChanged ? "pad-zoom" : "pad-drag"
             )
         }
 
@@ -103,12 +117,12 @@ final class SchemaValidatorTests: XCTestCase {
             try WireCodec.decoder.decode(WireMessage.self, from: encoded),
             .schemaSnapshot(document)
         )
-        let incomplete = makeDocument(
+        let missingZoom = makeDocument(
             controls: document.controls,
             items: document.layout.items,
-            bindings: Array(bindings.dropLast())
+            bindings: [bindings[0]]
         )
-        XCTAssertThrowsError(try SchemaValidator.validate(incomplete))
+        XCTAssertThrowsError(try SchemaValidator.validate(missingZoom))
     }
 
     func testPinchAndRotationRequireSeparateMappings() throws {
