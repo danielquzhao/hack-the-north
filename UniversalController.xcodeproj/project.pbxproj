@@ -346,7 +346,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Apps/UniversalControllerMac/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Universal Controller";
+				INFOPLIST_KEY_CFBundleDisplayName = aiClicker;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -378,7 +378,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Apps/UniversalControllerMac/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Universal Controller";
+				INFOPLIST_KEY_CFBundleDisplayName = aiClicker;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -409,8 +409,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Apps/UniversalControllerPhone/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Universal Controller";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR code displayed by Universal Controller on your Mac.";
+				INFOPLIST_KEY_CFBundleDisplayName = aiClicker;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR code displayed by aiClicker on your Mac.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect directly to your Mac and send controller input.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Use phone tilt as controller input when you enable it.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -446,8 +446,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Apps/UniversalControllerPhone/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Universal Controller";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR code displayed by Universal Controller on your Mac.";
+				INFOPLIST_KEY_CFBundleDisplayName = aiClicker;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR code displayed by aiClicker on your Mac.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect directly to your Mac and send controller input.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Use phone tilt as controller input when you enable it.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

@@ -133,7 +133,7 @@ struct ContentView: View {
     private var stateTitle: String {
         switch pairingClient.state {
         case .disconnected:
-            "Universal Controller"
+            "aiClicker"
         case .discovering:
             "Finding your Mac"
         case .connecting:
@@ -150,7 +150,7 @@ struct ContentView: View {
     private var stateMessage: String {
         switch pairingClient.state {
         case .disconnected:
-            "Scan the QR code shown by the Universal Controller overlay on your Mac."
+            "Scan the QR code shown by aiClicker on your Mac."
         case .discovering(let macName):
             "Looking for \(macName) on the local network…"
         case .connecting(let macName):

@@ -179,7 +179,7 @@ struct MacOverlayView: View {
                                     .font(.system(size: 23, weight: .medium))
                                     .accessibilityHidden(true)
                             }
-                            Text("Universal Controller")
+                            Text("aiClicker")
                                 .font(isWorkspaceExpanded
                                     ? .title2.weight(.semibold)
                                     : .system(size: 26, weight: .semibold))
@@ -526,7 +526,7 @@ struct MacOverlayView: View {
                             Label("Authenticating \(deviceName)…", systemImage: "lock.shield")
                                 .font(.headline)
                         } else {
-                            Text("Scan with Universal Controller")
+                            Text("Scan with aiClicker")
                                 .font(.headline)
                             Text(
                                 pairingHost.seatCount > 1

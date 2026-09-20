@@ -25,8 +25,8 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate {
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = item.button {
-            button.image = NSImage(systemSymbolName: "gamecontroller.fill", accessibilityDescription: "Universal Controller")
-            button.toolTip = "Universal Controller"
+            button.image = NSImage(systemSymbolName: "gamecontroller.fill", accessibilityDescription: "aiClicker")
+            button.toolTip = "aiClicker"
             button.target = self
             button.action = #selector(toggleOverlay)
         }

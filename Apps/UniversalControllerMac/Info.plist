@@ -9,6 +9,6 @@
 		<string>_universalctrl._tcp</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Universal Controller uses the local network to pair with your iPhone.</string>
+	<string>aiClicker uses the local network to pair with your iPhone.</string>
 </dict>
 </plist>

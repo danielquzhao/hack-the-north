@@ -11,11 +11,11 @@ enum TargetWindowScreenshotError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .permissionRequired:
-            "Allow Screen Recording for Universal Controller in System Settings, then quit and reopen the Mac app."
+            "Allow Screen Recording for aiClicker in System Settings, then quit and reopen the Mac app."
         case .noWindowForApp:
-            "No on-screen window from the captured app is available. Bring its window to the front and reopen Universal Controller."
+            "No on-screen window from the captured app is available. Bring its window to the front and reopen aiClicker."
         case .ambiguousWindows:
-            "Several windows from the captured app are open, and the focused one could not be matched. Bring the desired window to the front and reopen Universal Controller."
+            "Several windows from the captured app are open, and the focused one could not be matched. Bring the desired window to the front and reopen aiClicker."
         case .imageEncodingFailed:
             "The app window could not be converted to an image. Try again."
         }

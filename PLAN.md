@@ -1,14 +1,14 @@
-# Universal Controller MVP Architecture
+# aiClicker MVP Architecture
 
-Universal Controller is a controller system for Mac and iPhone. The Mac understands the user's current task, AI designs a controller from a fixed catalog of controls, and the iPhone renders that controller and streams deterministic input events back to the Mac.
+aiClicker is a controller system for Mac and iPhone. The Mac understands the user's current task, AI designs a controller from a fixed catalog of controls, and the iPhone renders that controller and streams deterministic input events back to the Mac.
 
 ## Product flow
 
 1. The user navigates to an app such as Keynote or Google Slides.
-2. They click the Universal Controller tile in the Mac menu bar.
-3. A centered, Spotlight-style overlay opens. Universal Controller remembers the app and window the user was using.
+2. They click the aiClicker tile in the Mac menu bar.
+3. A centered, Spotlight-style overlay opens. aiClicker remembers the app and window the user was using.
 4. The user describes the controller they want.
-5. With Screen Recording permission, the Mac captures the selected app window. AI uses that screenshot and the user's description to create a JSON controller from Universal Controller's built-in controls.
+5. With Screen Recording permission, the Mac captures the selected app window. AI uses that screenshot and the user's description to create a JSON controller from aiClicker's built-in controls.
 6. The user previews and manually adjusts the layout, labels, sizes, styles, and action mappings.
 7. The Mac displays a pairing QR code.
 8. The iPhone scans it, connects locally, and renders the controller.
@@ -35,7 +35,7 @@ flowchart LR
     Router --> Executor[CGEvent and AX executor]
 ```
 
-Universal Controller ships a versioned catalog of native components and visual assets. AI selects and configures catalog entries; it does not generate SwiftUI code or arbitrary images. Manual edits update the same schema produced by AI.
+aiClicker ships a versioned catalog of native components and visual assets. AI selects and configures catalog entries; it does not generate SwiftUI code or arbitrary images. Manual edits update the same schema produced by AI.
 
 ## Technology choices
 
@@ -68,11 +68,11 @@ Clicking the menu-bar tile toggles a centered, Spotlight-style overlay containin
 - Saved presets
 - Connection and permission status
 
-`AppContextMonitor` observes app activation, ignores Universal Controller itself, and remembers the last external frontmost app and focused-window title before opening the overlay. The overlay closes with Escape, an outside click, or another menu-bar click.
+`AppContextMonitor` observes app activation, ignores aiClicker itself, and remembers the last external frontmost app and focused-window title before opening the overlay. The overlay closes with Escape, an outside click, or another menu-bar click.
 
 On a generation request, ScreenCaptureKit captures only the selected app window and sends its resized image with the prompt to the model. Generation stops if Screen Recording access or a clear window match is unavailable. The screenshot is not saved to disk or sent to the phone.
 
-For Google Slides, the executable target is Safari or Chrome while the browser window title supplies the Slides context. The MVP will not require a browser extension or inspect private browser state. When the overlay closes, or before the first keyboard action, Universal Controller reactivates the captured app so shortcuts reach the intended target.
+For Google Slides, the executable target is Safari or Chrome while the browser window title supplies the Slides context. The MVP will not require a browser extension or inspect private browser state. When the overlay closes, or before the first keyboard action, aiClicker reactivates the captured app so shortcuts reach the intended target.
 
 ## Controller schema
 
@@ -174,7 +174,7 @@ The authenticated TCP design is acceptable for the local hackathon demo but is n
 
 ## Mac action execution
 
-Universal Controller requests Accessibility trust early with `AXIsProcessTrustedWithOptions`. The demo Mac app runs locally signed and outside the App Sandbox.
+aiClicker requests Accessibility trust early with `AXIsProcessTrustedWithOptions`. The demo Mac app runs locally signed and outside the App Sandbox.
 
 The first action executor supports:
 
@@ -183,7 +183,7 @@ The first action executor supports:
 - Mouse clicks
 - Pixel or line scrolling
 
-Before a keyboard action, Universal Controller verifies and, if necessary, reactivates the captured target app. It then posts the action through `CGEvent`.
+Before a keyboard action, aiClicker verifies and, if necessary, reactivates the captured target app. It then posts the action through `CGEvent`.
 
 Accessibility-tree actions come later. They will use bounded selectors within the focused window and invoke `AXUIElementPerformAction` or set an allowed value. AI-generated shell commands, AppleScript, executable code, and unbounded Accessibility traversal are not allowed.
 
@@ -236,7 +236,7 @@ Defer:
 
 Acceptance test:
 
-> With Keynote open, click Universal Controller, prompt “Give me one Next Slide button,” generate a valid one-button schema, scan the QR with an iPhone, see the button appear, tap it, and advance the slide. No model call occurs after generation.
+> With Keynote open, click aiClicker, prompt “Give me one Next Slide button,” generate a valid one-button schema, scan the QR with an iPhone, see the button appear, tap it, and advance the slide. No model call occurs after generation.
 
 Implementation order:
 

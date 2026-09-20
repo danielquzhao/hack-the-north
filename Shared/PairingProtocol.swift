@@ -293,7 +293,7 @@ enum PairingProtocolError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .invalidQRCode:
-            "This is not a valid Universal Controller QR code."
+            "This is not a valid aiClicker QR code."
         case .unsupportedVersion:
             "This QR code uses an unsupported protocol version."
         case .expiredQRCode:

@@ -17,7 +17,7 @@ enum MacActionError: LocalizedError {
         case .targetQuit:
             "The target app has quit. Open it and try again."
         case .accessibilityRequired:
-            "Allow Universal Controller in Accessibility settings, then try again."
+            "Allow aiClicker in Accessibility settings, then try again."
         case .keyboardControlRequired:
             "Keyboard event access is still unavailable. No key was sent."
         case .activationFailed:
