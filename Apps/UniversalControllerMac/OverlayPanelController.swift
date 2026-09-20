@@ -199,6 +199,7 @@ final class OverlayPanelController {
         editorState.generationError = nil
         generationTargetBundleID = bundleIdentifier
         let generationID = UUID()
+        let existingDocument = editorState.isIterativePrompt ? editorState.draft : nil
         self.generationID = generationID
         generationTask = Task { @MainActor [weak self] in
             await self?.generate(
@@ -207,6 +208,7 @@ final class OverlayPanelController {
                 application: application,
                 windowTitle: context?.windowTitle,
                 windowFrame: context?.windowFrame,
+                existingDocument: existingDocument,
                 id: generationID
             )
         }
@@ -218,6 +220,7 @@ final class OverlayPanelController {
         application: NSRunningApplication,
         windowTitle: String?,
         windowFrame: CGRect?,
+        existingDocument: ControllerDocument?,
         id: UUID
     ) async {
         defer {
@@ -245,14 +248,17 @@ final class OverlayPanelController {
                 request: request,
                 context: context,
                 screenshotJPEG: screenshotJPEG,
-                apiKey: apiKey
+                apiKey: apiKey,
+                existingDocument: existingDocument
             )
             try Task.checkCancellation()
             guard generationID == id else { return }
             editorState.draft = document
             editorState.selectedControlID = document.layout.items.first?.controlID
             editorState.draftWasGenerated = true
+            editorState.isIterativePrompt = true
             editorState.generationError = nil
+            editorState.prompt = ""
         } catch is CancellationError {
             return
         } catch {
@@ -269,7 +275,7 @@ final class OverlayPanelController {
                 revision: 1,
                 name: "Keynote Presenter",
                 target: target,
-            preferredOrientation: .portrait,
+            preferredOrientation: .landscape,
             layouts: ControllerLayouts(
                 portrait: ControllerLayout(
                     columns: 1,
@@ -362,7 +368,7 @@ final class OverlayPanelController {
             revision: 1,
             name: "Keynote Gamepad",
             target: target,
-            preferredOrientation: .portrait,
+            preferredOrientation: .landscape,
             layouts: ControllerLayouts(
                 portrait: ControllerLayout(columns: 2, items: portraitItems),
                 landscape: ControllerLayout(columns: 4, items: landscapeItems)

@@ -20,6 +20,7 @@ final class ControllerEditorState: ObservableObject {
     @Published var generationStatus: String?
     @Published var generationError: String?
     @Published var draftWasGenerated = false
+    @Published var isIterativePrompt = false
 }
 
 struct MacOverlayView: View {
@@ -40,6 +41,7 @@ struct MacOverlayView: View {
     @State private var showKeyboardHelp = false
     @State private var apiKeyEntry = ""
     @State private var apiKeyError: String?
+    @State private var showingSettings = false
 
     private var demoStyle: DemoControllerStyle {
         get { editorState.demoStyle }
@@ -82,73 +84,33 @@ struct MacOverlayView: View {
                     .accessibilityLabel("Close")
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("CURRENT APP")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    HStack(spacing: 12) {
-                        if let icon = context?.application.icon {
-                            Image(nsImage: icon)
-                                .resizable()
-                                .frame(width: 32, height: 32)
-                        } else {
-                            Image(systemName: "macwindow")
-                                .frame(width: 32, height: 32)
-                        }
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(context?.displayName ?? "No app captured")
-                                .fontWeight(.medium)
-                            Text(context?.windowTitle ?? (context?.canReadWindowTitle == false
-                                ? "Allow Accessibility access to read window titles"
-                                : "Window title unavailable"))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        Spacer()
-                    }
-                    .padding(12)
-                    .frame(maxWidth: .infinity)
-                    .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
-                }
-
-                HStack(spacing: 12) {
-                    Image(systemName: permissionStatus.canControl ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                        .foregroundStyle(permissionStatus.canControl ? .green : .orange)
-                    Text(permissionStatus.canControl ? "Accessibility and keyboard control ready"
-                        : permissionStatus.accessibility ? "Keyboard event access required" : "Accessibility access required")
-                        .font(.subheadline)
-                    Spacer()
-                    if !permissionStatus.canControl {
-                        Button(permissionStatus.accessibility ? "Request Keyboard Access" : "Grant Accessibility") {
-                            onRequestPermission()
-                            permissionStatus = MacActionExecutor.permissionStatus
-                            showKeyboardHelp = permissionStatus.accessibility && !permissionStatus.keyboardControl
-                        }
-                    }
-                }
-
-                if showKeyboardHelp {
-                    Text("If macOS shows no prompt, its keyboard event permission may need a reset. See README for the command.")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-
                 HStack {
-                    if let context, MacActionExecutor.isKeynote(context.application) {
-                        Button("Next Slide") { onNextSlide() }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(!permissionStatus.canControl)
-                        Text("Sends Right Arrow to Keynote")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Open Keynote to try the local Next Slide action")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    Button {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            showingSettings.toggle()
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 14, weight: .semibold))
+                            .frame(width: 30, height: 24)
+                            .background(.quaternary.opacity(0.6), in: Capsule())
                     }
+                    .buttonStyle(.plain)
+                    .help("App and generation settings")
+
+                    pairingToolbarControl
                     Spacer()
                 }
+                .overlay(alignment: .topLeading) {
+                    if showingSettings {
+                        settingsPopover
+                            .offset(y: 32)
+                            .transition(.opacity.combined(
+                                with: .scale(scale: 0.98, anchor: .topLeading)
+                            ))
+                    }
+                }
+                .zIndex(10)
 
                 generationSection
 
@@ -183,7 +145,9 @@ struct MacOverlayView: View {
                     controllerEditor
                 }
 
-                pairingSection
+                if pairingHost.state != .idle {
+                    pairingSection
+                }
 
                 if let errorMessage {
                     Text(errorMessage)
@@ -223,6 +187,176 @@ struct MacOverlayView: View {
         }
     }
 
+    private var settingsPopover: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Settings")
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("CURRENT APP")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    if let icon = context?.application.icon {
+                        Image(nsImage: icon)
+                            .resizable()
+                            .frame(width: 32, height: 32)
+                    } else {
+                        Image(systemName: "macwindow")
+                            .frame(width: 32, height: 32)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(context?.displayName ?? "No app captured")
+                            .fontWeight(.medium)
+                        Text(context?.windowTitle ?? (context?.canReadWindowTitle == false
+                            ? "Allow Accessibility access to read window titles"
+                            : "Window title unavailable"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                }
+                .padding(12)
+                .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    Image(systemName: permissionStatus.canControl
+                        ? "checkmark.circle.fill"
+                        : "exclamationmark.circle.fill")
+                        .foregroundStyle(permissionStatus.canControl ? .green : .orange)
+                    Text(permissionStatus.canControl
+                        ? "Accessibility and keyboard control ready"
+                        : permissionStatus.accessibility
+                            ? "Keyboard event access required"
+                            : "Accessibility access required")
+                        .font(.subheadline)
+                    Spacer()
+                }
+
+                if !permissionStatus.canControl {
+                    Button(permissionStatus.accessibility
+                        ? "Request Keyboard Access"
+                        : "Grant Accessibility") {
+                        onRequestPermission()
+                        permissionStatus = MacActionExecutor.permissionStatus
+                        showKeyboardHelp = permissionStatus.accessibility &&
+                            !permissionStatus.keyboardControl
+                    }
+                }
+
+                if showKeyboardHelp {
+                    Text("If macOS shows no prompt, its keyboard event permission may need a reset. See README for the command.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                if let context, MacActionExecutor.isKeynote(context.application) {
+                    HStack {
+                        Button("Test Next Slide") { onNextSlide() }
+                            .disabled(!permissionStatus.canControl)
+                        Text("Sends Right Arrow to Keynote")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("OPENAI")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                if editorState.hasAPIKey {
+                    HStack {
+                        Label("API key saved in Keychain", systemImage: "key.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Remove Key") {
+                            onRemoveAPIKey()
+                            apiKeyEntry = ""
+                        }
+                        .font(.caption)
+                    }
+                } else {
+                    HStack {
+                        SecureField("OpenAI API key", text: $apiKeyEntry)
+                            .textFieldStyle(.roundedBorder)
+                        Button("Save Key") {
+                            apiKeyError = onSaveAPIKey(apiKeyEntry)
+                            if apiKeyError == nil { apiKeyEntry = "" }
+                        }
+                        .disabled(apiKeyEntry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    HStack {
+                        Text("Stored only in macOS Keychain.")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Link(
+                            "Create an API key",
+                            destination: URL(string: "https://platform.openai.com/api-keys")!
+                        )
+                    }
+                    .font(.caption)
+                }
+
+                if let apiKeyError {
+                    Text(apiKeyError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+        .padding(18)
+        .frame(width: 420)
+        .background {
+            RoundedRectangle(cornerRadius: 14)
+                .fill(.ultraThickMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(.white.opacity(0.10))
+                }
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(.white.opacity(0.16))
+        )
+        .shadow(color: .black.opacity(0.25), radius: 14, y: 8)
+    }
+
+    @ViewBuilder
+    private var pairingToolbarControl: some View {
+        switch pairingHost.state {
+        case .idle, .failed:
+            Button("Pair iPhone") {
+                startPairing()
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(draftValidationError != nil || editorState.isGenerating)
+        case .starting, .waiting, .authenticating:
+            Label("Pairing iPhone", systemImage: "iphone.radiowaves.left.and.right")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        case .connected:
+            Label("iPhone connected", systemImage: "checkmark.circle.fill")
+                .font(.subheadline)
+                .foregroundStyle(.green)
+        }
+    }
+
+    private func startPairing() {
+        if let draft, draftValidationError == nil {
+            onStartPairing(draft)
+        }
+    }
+
     @ViewBuilder
     private var pairingSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -232,20 +366,7 @@ struct MacOverlayView: View {
 
             switch pairingHost.state {
             case .idle:
-                HStack {
-                    Label("No iPhone paired", systemImage: "iphone")
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Pair iPhone") {
-                        if let draft, draftValidationError == nil {
-                            onStartPairing(draft)
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(draftValidationError != nil || editorState.isGenerating)
-                }
-                .padding(14)
-                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+                EmptyView()
 
             case .starting:
                 HStack(spacing: 12) {
@@ -318,12 +439,6 @@ struct MacOverlayView: View {
                     Text(message)
                         .font(.subheadline)
                     Spacer()
-                    Button("New QR") {
-                        if let draft, draftValidationError == nil {
-                            onStartPairing(draft)
-                        }
-                    }
-                    .disabled(draftValidationError != nil || editorState.isGenerating)
                 }
                 .padding(14)
                 .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
@@ -340,7 +455,7 @@ private extension MacOverlayView {
                 .foregroundStyle(.secondary)
 
             TextField(
-                "For example: Next, Previous, and Blackout buttons",
+                generationPlaceholder,
                 text: $editorState.prompt,
                 axis: .vertical
             )
@@ -350,68 +465,56 @@ private extension MacOverlayView {
             .background(.background, in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary))
             .disabled(!canEditDraft)
-
-            if editorState.hasAPIKey {
-                HStack {
-                    Label("OpenAI API key saved in Keychain", systemImage: "key.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Remove Key") {
-                        onRemoveAPIKey()
-                        apiKeyEntry = ""
-                    }
-                    .font(.caption)
-                }
-            } else {
-                HStack {
-                    SecureField("OpenAI API key", text: $apiKeyEntry)
-                        .textFieldStyle(.roundedBorder)
-                    Button("Save Key") {
-                        apiKeyError = onSaveAPIKey(apiKeyEntry)
-                        if apiKeyError == nil { apiKeyEntry = "" }
-                    }
-                    .disabled(apiKeyEntry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                HStack {
-                    Text("Your key stays in macOS Keychain and is used only for generation requests.")
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Link("Create an API key", destination: URL(string: "https://platform.openai.com/api-keys")!)
-                }
-                .font(.caption)
+            .onKeyPress(.return) {
+                guard canGenerate else { return .ignored }
+                submitGeneration()
+                return .handled
             }
 
-            HStack {
-                Button {
-                    onGenerate(editorState.prompt)
-                } label: {
-                    if editorState.isGenerating {
-                        Label(editorState.generationStatus ?? "Generating…", systemImage: "sparkles")
-                    } else {
-                        Label("Generate Controller", systemImage: "sparkles")
-                    }
+            HStack(alignment: .center, spacing: 12) {
+                Text("Generation sends the selected app window, your request, and app details to OpenAI.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                if editorState.isGenerating {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Button(action: submitGeneration) {
+                    Label(
+                        editorState.isIterativePrompt ? "Update Controller" : "Generate Controller",
+                        systemImage: "sparkles"
+                    )
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(
-                    !canEditDraft || !editorState.hasAPIKey ||
-                    editorState.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                    context?.application.bundleIdentifier == nil
-                )
-                if editorState.isGenerating { ProgressView().controlSize(.small) }
-                Spacer()
+                .disabled(!canGenerate)
             }
 
-            Text("Generation captures the selected app window and sends its image, your request, and app details to OpenAI. It never captures the whole screen.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            if let message = apiKeyError ?? editorState.generationError {
+            if let message = editorState.generationError {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(.red)
             }
         }
+    }
+
+    var generationPlaceholder: String {
+        editorState.isIterativePrompt
+            ? "Try “Add another button” or “Make Next larger”"
+            : "For example: Next, Previous, and Blackout buttons"
+    }
+
+    var canGenerate: Bool {
+        canEditDraft &&
+        editorState.hasAPIKey &&
+        !editorState.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        context?.application.bundleIdentifier != nil
+    }
+
+    func submitGeneration() {
+        guard canGenerate else { return }
+        onGenerate(editorState.prompt)
     }
 
     var canEditDraft: Bool {
@@ -437,6 +540,7 @@ private extension MacOverlayView {
         draft = onMakeDraft(demoStyle, includeTilt)
         selectedControlID = draft?.layout.items.first?.controlID
         editorState.draftWasGenerated = false
+        editorState.isIterativePrompt = false
         editorState.generationError = nil
     }
 
@@ -507,25 +611,6 @@ private extension MacOverlayView {
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .disabled(!canEditDraft)
-
-                Text("ACTION MAPPINGS")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                VStack(spacing: 6) {
-                    ForEach(draft.controls) { control in
-                        HStack {
-                            Text(control.label)
-                                .lineLimit(1)
-                            Spacer()
-                            Text(actionSummary(for: control, in: draft))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        .font(.caption)
-                    }
-                }
-                .padding(12)
-                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
             }
 
             if let draftValidationError {
@@ -859,18 +944,6 @@ private extension MacOverlayView {
         return action
     }
 
-    func actionSummary(for control: ControlDefinition, in draft: ControllerDocument) -> String {
-        guard let binding = draft.bindings.first(where: { $0.controlID == control.id }) else {
-            return "No action"
-        }
-        switch binding.action {
-        case .keyChord(let action):
-            let parts = action.modifiers.map { $0.rawValue.capitalized } + [action.key.rawValue]
-            return parts.joined(separator: " + ")
-        case .mouseMove(let action):
-            return "Move pointer · gain \(Int(action.gain))"
-        }
-    }
 }
 
 private struct PreviewRow: Identifiable {
