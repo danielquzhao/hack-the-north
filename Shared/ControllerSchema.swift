@@ -1,7 +1,7 @@
 import Foundation
 
 struct ControllerDocument: Codable, Equatable, Sendable, Identifiable {
-    static let currentSchemaVersion = 4
+    static let currentSchemaVersion = 5
 
     let schemaVersion: Int
     let id: UUID
@@ -178,8 +178,6 @@ enum ControlCapabilityID: String, Codable, CaseIterable, Equatable, Sendable {
     case joystick
     case motion
     case trackpad
-    case pinchPad
-    case rotationPad
 }
 
 struct ButtonControlConfiguration: Equatable, Sendable {
@@ -255,34 +253,6 @@ struct TrackpadControlConfiguration: Codable, Equatable, Sendable {
     let hapticsEnabled: Bool
 }
 
-struct TwoFingerControlConfiguration: Codable, Equatable, Sendable {
-    let hapticsEnabled: Bool
-}
-
-enum PinchDirection: String, Codable, CaseIterable, Hashable, Sendable {
-    case inward
-    case outward
-
-    var event: ControlEventKind {
-        switch self {
-        case .inward: .pinchedIn
-        case .outward: .pinchedOut
-        }
-    }
-}
-
-enum RotationDirection: String, Codable, CaseIterable, Hashable, Sendable {
-    case clockwise
-    case counterclockwise
-
-    var event: ControlEventKind {
-        switch self {
-        case .clockwise: .rotatedClockwise
-        case .counterclockwise: .rotatedCounterclockwise
-        }
-    }
-}
-
 enum MotionSource: String, Codable, CaseIterable, Equatable, Sendable {
     case tilt
 }
@@ -296,12 +266,10 @@ enum ControlKind: Equatable, Sendable {
     case joystick(JoystickControlConfiguration)
     case motion(MotionControlConfiguration)
     case trackpad(TrackpadControlConfiguration)
-    case pinchPad(TwoFingerControlConfiguration)
-    case rotationPad(TwoFingerControlConfiguration)
 
     var outputKind: InputValueKind {
         switch self {
-        case .button, .pinchPad, .rotationPad:
+        case .button:
             .none
         case .joystick, .motion, .trackpad:
             .vector2
@@ -318,10 +286,6 @@ enum ControlKind: Equatable, Sendable {
             .motion
         case .trackpad:
             .trackpad
-        case .pinchPad:
-            .pinchPad
-        case .rotationPad:
-            .rotationPad
         }
     }
 
@@ -333,10 +297,6 @@ enum ControlKind: Equatable, Sendable {
             [.changed]
         case .trackpad:
             [.began, .changed, .ended, .pinchChanged]
-        case .pinchPad:
-            Set(PinchDirection.allCases.map(\.event))
-        case .rotationPad:
-            Set(RotationDirection.allCases.map(\.event))
         }
     }
 }
@@ -390,21 +350,6 @@ struct ControlDefinition: Equatable, Sendable, Identifiable {
         )
     }
 
-    static func pinchPad(id: String, label: String) -> ControlDefinition {
-        ControlDefinition(
-            id: id,
-            label: label,
-            kind: .pinchPad(TwoFingerControlConfiguration(hapticsEnabled: true))
-        )
-    }
-
-    static func rotationPad(id: String, label: String) -> ControlDefinition {
-        ControlDefinition(
-            id: id,
-            label: label,
-            kind: .rotationPad(TwoFingerControlConfiguration(hapticsEnabled: true))
-        )
-    }
 }
 
 extension ControlDefinition: Codable {
@@ -441,16 +386,6 @@ extension ControlDefinition: Codable {
                 TrackpadControlConfiguration.self,
                 forKey: .configuration
             ))
-        case .pinchPad:
-            kind = .pinchPad(try container.decode(
-                TwoFingerControlConfiguration.self,
-                forKey: .configuration
-            ))
-        case .rotationPad:
-            kind = .rotationPad(try container.decode(
-                TwoFingerControlConfiguration.self,
-                forKey: .configuration
-            ))
         }
     }
 
@@ -472,12 +407,6 @@ extension ControlDefinition: Codable {
         case .trackpad(let configuration):
             try container.encode(ControlCapabilityID.trackpad, forKey: .type)
             try container.encode(configuration, forKey: .configuration)
-        case .pinchPad(let configuration):
-            try container.encode(ControlCapabilityID.pinchPad, forKey: .type)
-            try container.encode(configuration, forKey: .configuration)
-        case .rotationPad(let configuration):
-            try container.encode(ControlCapabilityID.rotationPad, forKey: .type)
-            try container.encode(configuration, forKey: .configuration)
         }
     }
 }
@@ -488,10 +417,6 @@ enum ControlEventKind: String, Codable, Equatable, Hashable, Sendable {
     case changed
     case ended
     case pinchChanged
-    case pinchedIn
-    case pinchedOut
-    case rotatedClockwise
-    case rotatedCounterclockwise
 }
 
 enum InputValueKind: String, Codable, Equatable, Sendable {

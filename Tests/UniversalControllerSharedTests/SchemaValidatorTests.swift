@@ -46,26 +46,6 @@ final class SchemaValidatorTests: XCTestCase {
                 defaultWidth: 0.44,
                 defaultHeight: 0.32,
                 occupiesLayout: true
-            ), ControlCapabilityDescriptor(
-                id: .pinchPad,
-                outputKind: .none,
-                events: PinchDirection.allCases.map(\.event),
-                displayName: "Pinch Pad",
-                systemImage: "plus.magnifyingglass",
-                summary: "Pinch in / out shortcuts",
-                defaultWidth: 0.36,
-                defaultHeight: 0.28,
-                occupiesLayout: true
-            ), ControlCapabilityDescriptor(
-                id: .rotationPad,
-                outputKind: .none,
-                events: RotationDirection.allCases.map(\.event),
-                displayName: "Rotate Pad",
-                systemImage: "arrow.triangle.2.circlepath",
-                summary: "Rotate clockwise / counterclockwise",
-                defaultWidth: 0.36,
-                defaultHeight: 0.28,
-                occupiesLayout: true
             )]
         )
         XCTAssertEqual(
@@ -162,53 +142,6 @@ final class SchemaValidatorTests: XCTestCase {
             bindings: [bindings[0]]
         )
         XCTAssertThrowsError(try SchemaValidator.validate(missingZoom))
-    }
-
-    func testPinchAndRotationRequireSeparateMappings() throws {
-        let pinchBindings = PinchDirection.allCases.map { direction in
-            ControlBinding(
-                id: "pinch-\(direction.rawValue)",
-                controlID: "pinch",
-                event: direction.event,
-                action: .keyChord(KeyChordAction(key: .space, modifiers: []))
-            )
-        }
-        let rotationBindings = RotationDirection.allCases.map { direction in
-            ControlBinding(
-                id: "rotation-\(direction.rawValue)",
-                controlID: "rotation",
-                event: direction.event,
-                action: .keyChord(KeyChordAction(key: .enter, modifiers: []))
-            )
-        }
-        let controls: [ControlDefinition] = [
-            .pinchPad(id: "pinch", label: "Pinch"),
-            .rotationPad(id: "rotation", label: "Rotate"),
-        ]
-        let items = controls.enumerated().map { index, control in
-            ControllerLayoutItem(
-                controlID: control.id,
-                frame: LayoutRect(x: 0.05, y: 0.05 + Double(index) * 0.45, width: 0.9, height: 0.4)
-            )
-        }
-        let document = makeDocument(
-            controls: controls,
-            items: items,
-            bindings: pinchBindings + rotationBindings
-        )
-        try SchemaValidator.validate(document)
-        let encoded = try WireCodec.encoder.encode(WireMessage.schemaSnapshot(document))
-        XCTAssertEqual(
-            try WireCodec.decoder.decode(WireMessage.self, from: encoded),
-            .schemaSnapshot(document)
-        )
-
-        let incomplete = makeDocument(
-            controls: controls,
-            items: items,
-            bindings: pinchBindings + Array(rotationBindings.dropLast())
-        )
-        XCTAssertThrowsError(try SchemaValidator.validate(incomplete))
     }
 
     func testDuplicateControlIDsAreRejected() {

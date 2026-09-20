@@ -976,8 +976,6 @@ private extension MacOverlayView {
         case .joystick: .blue
         case .motion: .teal
         case .trackpad: .purple
-        case .pinchPad: .orange
-        case .rotationPad: .pink
         }
     }
 
@@ -1123,24 +1121,6 @@ private extension MacOverlayView {
     func actionInspector(_ id: String) -> some View {
         if let control = draft?.control(id: id), case .trackpad = control.kind {
             trackpadInspector(id)
-        } else if let control = draft?.control(id: id), case .pinchPad = control.kind {
-            ForEach(PinchDirection.allCases, id: \.self) { direction in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(direction == .inward ? "Pinch In" : "Pinch Out")
-                        .font(.subheadline.weight(.semibold))
-                    keyChordInspector(id, event: direction.event)
-                }
-                .padding(.vertical, 4)
-            }
-        } else if let control = draft?.control(id: id), case .rotationPad = control.kind {
-            ForEach(RotationDirection.allCases, id: \.self) { direction in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(direction == .clockwise ? "Rotate Clockwise" : "Rotate Counterclockwise")
-                        .font(.subheadline.weight(.semibold))
-                    keyChordInspector(id, event: direction.event)
-                }
-                .padding(.vertical, 4)
-            }
         } else if let action = draft?.bindings.first(where: { $0.controlID == id })?.action {
             switch action {
             case .keyChord:

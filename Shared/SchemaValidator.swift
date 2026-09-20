@@ -74,28 +74,6 @@ struct ControllerCapabilityCatalog: Codable, Equatable, Sendable {
                 defaultHeight: 0.32,
                 occupiesLayout: true
             ),
-            ControlCapabilityDescriptor(
-                id: .pinchPad,
-                outputKind: .none,
-                events: PinchDirection.allCases.map(\.event),
-                displayName: "Pinch Pad",
-                systemImage: "plus.magnifyingglass",
-                summary: "Pinch in / out shortcuts",
-                defaultWidth: 0.36,
-                defaultHeight: 0.28,
-                occupiesLayout: true
-            ),
-            ControlCapabilityDescriptor(
-                id: .rotationPad,
-                outputKind: .none,
-                events: RotationDirection.allCases.map(\.event),
-                displayName: "Rotate Pad",
-                systemImage: "arrow.triangle.2.circlepath",
-                summary: "Rotate clockwise / counterclockwise",
-                defaultWidth: 0.36,
-                defaultHeight: 0.28,
-                occupiesLayout: true
-            ),
         ],
         actions: [
             ActionCapabilityDescriptor(
@@ -254,22 +232,6 @@ enum SchemaValidator {
         }
 
         for control in document.controls {
-            let requiredEvents: [ControlEventKind]
-            switch control.kind {
-            case .pinchPad:
-                requiredEvents = PinchDirection.allCases.map(\.event)
-            case .rotationPad:
-                requiredEvents = RotationDirection.allCases.map(\.event)
-            case .trackpad:
-                requiredEvents = [.changed, .pinchChanged]
-            default:
-                continue
-            }
-            for event in requiredEvents {
-                guard document.binding(controlID: control.id, event: event) != nil else {
-                    throw error("Gesture control '\(control.id)' needs a \(event.rawValue) mapping.")
-                }
-            }
             if case .trackpad = control.kind {
                 guard case .mouseDrag = document.binding(controlID: control.id, event: .changed)?.action,
                       case .scroll = document.binding(controlID: control.id, event: .pinchChanged)?.action else {
@@ -374,10 +336,6 @@ extension ControlCapabilityDescriptor {
             .tilt(id: id, label: displayName)
         case .trackpad:
             .trackpad(id: id, label: displayName)
-        case .pinchPad:
-            .pinchPad(id: id, label: displayName)
-        case .rotationPad:
-            .rotationPad(id: id, label: displayName)
         }
     }
 
@@ -418,24 +376,6 @@ extension ControlCapabilityDescriptor {
                     action: .scroll(ScrollAction(gain: 10))
                 ),
             ]
-        case .pinchPad:
-            PinchDirection.allCases.map { direction in
-                ControlBinding(
-                    id: "\(controlID)-\(direction.rawValue)",
-                    controlID: controlID,
-                    event: direction.event,
-                    action: .keyChord(KeyChordAction(key: .space, modifiers: []))
-                )
-            }
-        case .rotationPad:
-            RotationDirection.allCases.map { direction in
-                ControlBinding(
-                    id: "\(controlID)-\(direction.rawValue)",
-                    controlID: controlID,
-                    event: direction.event,
-                    action: .keyChord(KeyChordAction(key: .enter, modifiers: []))
-                )
-            }
         }
     }
 
